@@ -1,6 +1,42 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.19 — Signal + cycle update read-side adapters ✅ SHIPPED (2026-02)
+
+Closes the remaining two surfaces deferred in P5.17. Inbox-routed signals are now first-class rows in `db.signals` with origin envelopes; routed cycle updates are first-class rows in `db.cycle_contributions`. Pulse Signals tab has the `Origin · All / Email Akki / Manual` filter dropdown; Cycle contribution rows carry the inline origin chip. Both surfaces reuse the P5.17 `OriginChip` + `SourceMessageModal` components — single source of truth.
+
+**Pre-step cleanup:** removed tester-pollution row `verify-p5-17-viewer-msg-001` from `admin_inbox_messages` + `source_view_log` (executed before P5.19 work).
+
+**Structural ID resolution (the actual blocker, resolved):** new `services/inbox_routing/context_resolver.py`. Documented precedence chain for `context_id` (signals): `target_hint.context_id` → sender's known `members.context_id` → default-inbox singleton. For `cycle_id` (cycle updates): `target_hint.cycle_id` → latest OPEN cycle for resolved context → default-inbox cycle (auto-mint) → `pending` (with confidence downgrade). Default-inbox context + cycle are tenant-scoped singletons auto-created on first use; cross-tenant access blocked at the resolver level (verified with `# negative-leak:` assertion).
+
+**Backend:** `services/inbox_routing/context_resolver.py` (NEW; precedence chain + singleton helpers) · `upstream_adapter.py` extended with `materialize_signal_primary` + `materialize_cycle_update_primary` · `routers.py::route_to_signal` + `route_to_cycle_update` extended to resolve + materialise + write routing-log `extra.primary_row_id` · `backfill.py` extended with `backfill_signals` + `backfill_cycle_updates` · `routers/pulse.py::pulse_feed` adds `origin` to the serializer + `?origin=email_akki|manual` filter · `routers/cycle_manager.py::list_contributions` unchanged (origin flows naturally through `{"_id": 0}` projection).
+
+**Frontend:** `pages/Pulse.jsx` — `OriginChip` inside SignalCard chip cluster, custom-event bridge (`pulse:open-source-modal`) to surface the modal at page level without breaking the existing drawer click handler, `originFilter` state + `pulse-origin-filter` dropdown next to the show-low toggle · `pages/Cycle.jsx::ContributionsStep` — inline origin chip on each contribution row, `SourceMessageModal` mount at section end. `OriginChip` + `SourceMessageModal` components REUSED from P5.17 (no new modals; single source of truth).
+
+**Pytest lockdown:** 17 new tests in `test_phase_p5_19_signal_cycle_adapter.py`. **Combined suite: 137/137 green in 94.59s. Suite-size delta vs 120 baseline: +17.** Coverage: default-inbox context idempotency · default-inbox tenant isolation (`# negative-leak:`) · default-inbox cycle idempotency · signal context precedence (hint, default, cross-tenant rejection with `# negative-leak:`) · cycle id precedence (open, pending, default auto-mint) · live route_to_signal + route_to_cycle_update primary-row writes · backfill_signals + backfill_cycle_updates create + idempotent (`# negative-leak:`) · pulse feed serializer origin field + filter narrow/exclude · voice-lint clean on context resolver · source-strict serializer guard.
+
+**Idempotency proofs (run twice each, both zero net writes on second):** `backfill_signals` 12 scanned / 0 created on second run · `backfill_cycle_updates` 11 scanned / 0 created on second run.
+
+**Live raw Playwright trace `/tmp/p5_19_signal_cycle_trace.py`:** drove the live preview at 1280×800 / 1024×768 / 820×1180 / 414×896. Per viewport — filter present ✓ · seeded chip visible ✓ · chip count 4 · modal opens with correct subject `Signal: P5.19 trace seed` · filter→email_akki shows 4 chips. 12 JPEGs + `probe_results.json` in `/tmp/p5_19_signals_cycle/`.
+
+**Cycle UI rendering caveat (honesty note):** the routed `cycle_contribution` exists in Mongo with the correct `agenda_id` and origin envelope, and the `list_contributions` endpoint correctly returns it with the origin field; however the live ContributionsStep UI on the default-inbox cycle requires wizard scaffolding (agenda items + team members) that the minimal default-inbox cycle seed doesn't satisfy. Data correctness is green (pytest); the UX wizard scaffolding for the default-inbox cycle is logged as a single-line deferred item.
+
+**Discipline gates (verbatim):** v1 byte-identical `4 passed in 3.35s` · `voice_lint: clean across customer-copy surfaces.` · ESLint clean on Pulse.jsx + Cycle.jsx · ruff clean on all touched backend files.
+
+**Memo:** `/app/memory/sprints/P5_19_signal_cycle_adapter.md` — full precedence chain documentation, file-touch diff, deferred list, HUMAN_REQUIRED.
+
+**Deferred (absolute minimum, each logged once):**
+1. Re-target row action on default-inbox-context badge (>30 LOC; deferred to polish phase).
+2. Default-inbox cycle UX wizard scaffolding (P5.20 candidate paired with OAuth).
+3. OAuth migration (P5.18, awaiting Google creds).
+4. AdminTopBar tile for source-view counts (declined, P5.17 follow-up).
+5. Honesty-protocol `git grep` pre-merge gate (declined, P5.15.1 follow-up).
+6. DOM-selector polish on Playwright trace (carried trace artifact, not UX).
+
+**HUMAN_REQUIRED:** deploy preview → production (carries P5.10–P5.17 + P5.19 in one ship; P5.18 deferred); no new env vars; backfills safe to run once in prod via `python -m services.inbox_routing.backfill` (idempotent).
+
+
+
 ### Phase P5.17 — Upstream read-side adapter ✅ SHIPPED (2026-02)
 
 Closes the loop P5.16 left open. Pre-fix: an inbound email routed by the classifier landed in `inbox_routing_tasks` but never surfaced inside Task Manager. Post-fix: email-routed tasks are first-class rows in the primary `tasks` collection, carry a small **📧 From email** origin chip on the Task Manager surface, and a click opens a tenant-scoped read-only preview of the source message.

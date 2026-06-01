@@ -15,6 +15,9 @@
  */
 import React, { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
+// Phase P5.19 — origin chip + source-message modal reuse from P5.17.
+import OriginChip from "@/components/origin/OriginChip";
+import SourceMessageModal from "@/components/origin/SourceMessageModal";
 // Phase E.3 (2026-05-26) — Universal Document Drawer.
 import DocumentDrawer from "@/components/documents/DocumentDrawer";
 import { useAuth } from "@/contexts/AuthContext";
@@ -544,6 +547,8 @@ function TeamStep({ cid, cycleId, agenda, members, refresh, onBack, onForward })
 function ContributionsStep({ cid, cycleId, agenda, members, contributions, refresh, onBack, onForward }) {
   const navigate = useNavigate();
   const items = agenda?.items || [];
+  // P5.19 — source-message modal for origin chip click on rows.
+  const [sourceModalOrigin, setSourceModalOrigin] = useState(null);
   const [draft, setDraft] = useState({
     agenda_item_id: items[0]?.id || "",
     team_member_id: members[0]?.id || "",
@@ -657,7 +662,17 @@ function ContributionsStep({ cid, cycleId, agenda, members, contributions, refre
             const member = members.find((m) => m.id === c.team_member_id);
             return (
               <li key={c.id} className="px-4 py-3" data-testid={`cycle-contrib-row-${c.id}`}>
-                <p className="akki-meta text-[11px] mb-0.5 font-mono text-[var(--muted)]">{item?.label || "(item missing)"} · {member?.name || "(unknown)"}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="akki-meta text-[11px] mb-0.5 font-mono text-[var(--muted)]">{item?.label || "(item missing)"} · {member?.name || "(unknown)"}</p>
+                  {/* P5.19 — origin chip when this contribution was
+                      routed from an inbox email. Clicking the chip
+                      opens the SourceMessageModal at the Cycle page top-level. */}
+                  <OriginChip
+                    origin={c.origin}
+                    onClick={(env) => setSourceModalOrigin(env)}
+                    testid={`cycle-contrib-origin-chip-${c.id}`}
+                  />
+                </div>
                 {c.title && <p className="akki-serif text-[14px] text-[var(--ink)]">{c.title}</p>}
                 <p className="text-[13px] text-[var(--ink)] leading-[1.55] mt-1 line-clamp-3">{c.body_text}</p>
                 {c.scores ? (
@@ -829,6 +844,16 @@ function ContributionsStep({ cid, cycleId, agenda, members, contributions, refre
           }));
         }}
       />
+      {/* P5.19 — source-message modal for origin chip click on a
+          routed cycle contribution row. Tenant-scoped via the
+          existing P5.17 preview endpoint. */}
+      {sourceModalOrigin && (
+        <SourceMessageModal
+          origin={sourceModalOrigin}
+          onClose={() => setSourceModalOrigin(null)}
+          isSuperadmin={false}
+        />
+      )}
     </section>
   );
 }

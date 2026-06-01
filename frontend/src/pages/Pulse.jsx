@@ -22,6 +22,9 @@ import PulseMasterTabs from "@/components/pulse/PulseMasterTabs";
 import { useAuth } from "@/contexts/AuthContext";
 // Phase E.3 (2026-05-26) — Universal Document Drawer.
 import DocumentDrawer from "@/components/documents/DocumentDrawer";
+// Phase P5.19 — origin chip + source-message modal reuse from P5.17.
+import OriginChip from "@/components/origin/OriginChip";
+import SourceMessageModal from "@/components/origin/SourceMessageModal";
 import { api, apiErrorMessage } from "@/lib/api";
 import { takeToSolva } from "@/lib/takeToSolva";
 import {
@@ -224,6 +227,15 @@ function SignalCard({ card, onAction, busyAction, onOpenDrawer }) {
             {card.confidence}
           </Chip>
         )}
+        {/* P5.19 — origin chip when this signal was routed from email. */}
+        <OriginChip
+          origin={card.origin}
+          onClick={(env) => {
+            // Surfaces the modal at the Pulse top-level.
+            window.dispatchEvent(new CustomEvent("pulse:open-source-modal", { detail: env }));
+          }}
+          testid={`pulse-card-origin-chip-${card.id}`}
+        />
         {card.merge_count > 1 && (
           <Chip
             tone="bg-amber-50 text-amber-800 border-amber-200"
@@ -436,6 +448,19 @@ export default function Pulse() {
   const [stateTab, setStateTab] = useState("active");   // active|bookmarked|resolved|archived
   const [showLow, setShowLow] = useState(false);        // surface confidence='low'
   const [drawerCard, setDrawerCard] = useState(null);   // currently-open signal in side drawer
+  // P5.19 — origin filter (all / email_akki / manual) + source-message modal.
+  const [originFilter, setOriginFilter] = useState("all");
+  const [sourceModalOrigin, setSourceModalOrigin] = useState(null);
+
+  // P5.19 — listen for chip-click events from SignalCard's nested
+  // origin chip. The chip lives inside a <button> that opens the
+  // drawer; stopPropagation in OriginChip's handler keeps the
+  // drawer from opening, and this listener picks up the event.
+  useEffect(() => {
+    const handler = (e) => setSourceModalOrigin(e.detail);
+    window.addEventListener("pulse:open-source-modal", handler);
+    return () => window.removeEventListener("pulse:open-source-modal", handler);
+  }, []);
 
   /* Load feed (re-runs when context or filters change) */
   const fetchFeed = async (silent = false) => {
@@ -448,6 +473,10 @@ export default function Pulse() {
       // Phase H3 — pipe state + show_low to the backend feed.
       params.set("state", stateTab);
       if (showLow) params.set("show_low", "true");
+      // P5.19 — origin filter is passed-through to the backend; the
+      // backend `pulse_feed` endpoint narrows `db.signals` by
+      // `origin.source` accordingly.
+      if (originFilter && originFilter !== "all") params.set("origin", originFilter);
       const { data } = await api.get(`/contexts/${cid}/pulse/feed?${params.toString()}`);
       setCards(data?.cards || []);
       setError(null);
@@ -461,7 +490,7 @@ export default function Pulse() {
   useEffect(() => {
     fetchFeed();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cid, typeFilter, freshnessSet, stateTab, showLow]);
+  }, [cid, typeFilter, freshnessSet, stateTab, showLow, originFilter]);
 
   const toggleFreshness = (id) => {
     setFreshnessSet((prev) => {
@@ -650,6 +679,17 @@ export default function Pulse() {
             {showLow ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
             {showLow ? "Show all" : "Hide low confidence"}
           </button>
+          {/* P5.19 — origin filter dropdown next to the show-low toggle. */}
+          <select
+            value={originFilter}
+            onChange={(e) => setOriginFilter(e.target.value)}
+            className="ml-2 text-[11.5px] font-mono px-2 py-1 border border-[var(--rule)] rounded-sm bg-white text-[var(--ink)] hover:border-[var(--ink)]"
+            data-testid="pulse-origin-filter"
+          >
+            <option value="all">Origin · All</option>
+            <option value="email_akki">Origin · Email Akki</option>
+            <option value="manual">Origin · Manual</option>
+          </select>
         </div>
 
         {/* Filter strip */}
@@ -757,6 +797,14 @@ export default function Pulse() {
           Pulse surfaces doc refs via signal cards; clicking a doc
           ref can append `?doc_id=` to open the drawer here. */}
       <DocumentDrawer contextId={cid} />
+      {/* P5.19 — origin chip → source-message modal mount at top-level. */}
+      {sourceModalOrigin && (
+        <SourceMessageModal
+          origin={sourceModalOrigin}
+          onClose={() => setSourceModalOrigin(null)}
+          isSuperadmin={false}
+        />
+      )}
     </AppShell>
   );
 }

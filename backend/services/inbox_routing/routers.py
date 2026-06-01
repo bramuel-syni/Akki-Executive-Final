@@ -219,6 +219,39 @@ async def route_to_cycle_update(
     }
     await db.inbox_routing_cycle_updates.insert_one(dict(update_doc))
 
+    # Phase P5.19 — materialise the primary cycle_contributions row.
+    # Context + cycle resolution uses the precedence chain documented
+    # in `services/inbox_routing/context_resolver.py`. If the resolver
+    # returns `pending` we DO NOT auto-create a cycle on a non-default
+    # context; instead the routing log is annotated `resolution_pending`
+    # and the confidence is downgraded.
+    primary_target_id: Optional[str] = None
+    resolution_label: Optional[str] = None
+    try:
+        from .context_resolver import resolve_signal_context, resolve_cycle_id
+        from .upstream_adapter import materialize_cycle_update_primary
+        hint_d = hint.model_dump() if hasattr(hint, "model_dump") else dict(hint or {})
+        ctx_id, ctx_source = await resolve_signal_context(
+            db, account_id=account_id, target_hint=hint_d,
+            from_email=message.get("from_email"),
+        )
+        cyc_id, cyc_status = await resolve_cycle_id(
+            db, account_id=account_id, target_hint=hint_d, context_id=ctx_id,
+        )
+        if cyc_id:
+            m = await materialize_cycle_update_primary(
+                db, message=message, envelope=envelope,
+                context_id=ctx_id, cycle_id=cyc_id,
+                decision_source=decision_source,
+            )
+            primary_target_id = m["id"]
+            resolution_label = f"{ctx_source}/{cyc_status}"
+        else:
+            resolution_label = "pending"
+    except Exception as _e:  # noqa: BLE001
+        log.warning("[P5.19] primary cycle_update insert failed for %s: %s",
+                    update_doc["id"], _e)
+
     log_entry = InboxRoutingLogEntry(
         message_id=message["id"],
         account_id=account_id,
@@ -232,6 +265,13 @@ async def route_to_cycle_update(
         classifier_version=envelope.classifier_version,
         decision_source=decision_source,  # type: ignore[arg-type]
         actor_id=actor_id,
+        # P5.19 — extend routing-log shape with the materialised
+        # primary row id + resolution label so admin diagnostics
+        # can tell scheduler/lazy/manual paths apart.
+        extra={
+            "primary_row_id": primary_target_id,
+            "resolution": resolution_label or "unresolved",
+        },
     )
     log_id = await write_routing_log(log_entry)
     return {
@@ -291,6 +331,30 @@ async def route_to_signal(
     }
     await db.inbox_routing_signals.insert_one(dict(signal_doc))
 
+    # Phase P5.19 (2026-02) — materialise the primary signal row in
+    # `db.signals` so the Pulse feed surfaces this routed signal as
+    # a first-class card. Context resolution uses the precedence
+    # chain documented in `services/inbox_routing/context_resolver.py`.
+    primary_target_id: Optional[str] = None
+    resolution_label: Optional[str] = None
+    try:
+        from .context_resolver import resolve_signal_context
+        from .upstream_adapter import materialize_signal_primary
+        ctx_id, ctx_source = await resolve_signal_context(
+            db, account_id=account_id,
+            target_hint=hint.model_dump() if hasattr(hint, "model_dump") else dict(hint or {}),
+            from_email=message.get("from_email"),
+        )
+        m = await materialize_signal_primary(
+            db, message=message, envelope=envelope,
+            context_id=ctx_id, decision_source=decision_source,
+        )
+        primary_target_id = m["id"]
+        resolution_label = ctx_source
+    except Exception as _e:  # noqa: BLE001
+        log.warning("[P5.19] primary signal insert failed for %s: %s",
+                    signal_doc["id"], _e)
+
     log_entry = InboxRoutingLogEntry(
         message_id=message["id"],
         account_id=account_id,
@@ -304,6 +368,12 @@ async def route_to_signal(
         classifier_version=envelope.classifier_version,
         decision_source=decision_source,  # type: ignore[arg-type]
         actor_id=actor_id,
+        # P5.19 — primary materialised row id + context resolution
+        # label captured for admin diagnostics.
+        extra={
+            "primary_row_id": primary_target_id,
+            "resolution": resolution_label or "unresolved",
+        },
     )
     log_id = await write_routing_log(log_entry)
     return {

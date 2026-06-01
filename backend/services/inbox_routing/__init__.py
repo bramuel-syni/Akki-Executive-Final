@@ -60,8 +60,20 @@ from .upstream_adapter import (
     ORIGIN_EMAIL_AKKI,
     build_origin_envelope,
     is_email_akki_origin,
+    materialize_signal_primary,
+    materialize_cycle_update_primary,
 )
-from .backfill import backfill_tasks, run as run_backfill
+from .backfill import (
+    backfill_tasks, backfill_signals, backfill_cycle_updates,
+    run as run_backfill,
+)
+from .context_resolver import (
+    DEFAULT_INBOX_CONTEXT_NAME,
+    get_or_create_default_inbox_context,
+    get_or_create_default_inbox_cycle,
+    resolve_signal_context,
+    resolve_cycle_id,
+)
 
 __all__ = [
     # schema
@@ -101,4 +113,14 @@ __all__ = [
     "is_email_akki_origin",
     "backfill_tasks",
     "run_backfill",
+    # P5.19 — context resolver + signal/cycle materialisers
+    "DEFAULT_INBOX_CONTEXT_NAME",
+    "get_or_create_default_inbox_context",
+    "get_or_create_default_inbox_cycle",
+    "resolve_signal_context",
+    "resolve_cycle_id",
+    "materialize_signal_primary",
+    "materialize_cycle_update_primary",
+    "backfill_signals",
+    "backfill_cycle_updates",
 ]

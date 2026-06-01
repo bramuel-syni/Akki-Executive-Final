@@ -182,6 +182,7 @@ async def pulse_feed(
     state: Optional[str] = "active",    # Phase G.1 — lifecycle tab
     show_low: bool = False,             # Phase G.2 — confidence floor toggle
     confidence: Optional[str] = None,   # Phase G.2 — explicit confidence filter
+    origin: Optional[str] = None,       # Phase P5.19 — email_akki | manual
     limit: Optional[int] = None,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
@@ -229,6 +230,17 @@ async def pulse_feed(
         state_filter = {"state": state_arg}
 
     base_query = {"context_id": context_id, **state_filter}
+
+    # Phase P5.19 — `?origin=email_akki|manual` filter on the feed.
+    # `email_akki` narrows to signals carrying the P5.17/P5.19 origin
+    # envelope; `manual` excludes them.
+    if origin == "email_akki":
+        base_query["origin.source"] = "email_akki"
+    elif origin == "manual":
+        base_query["$and"] = [{"$or": [
+            {"origin": {"$exists": False}},
+            {"origin": None},
+        ]}]
 
     sigs = await db.signals.find(base_query, {"_id": 0})\
         .sort("created_at", -1).to_list(500)
@@ -328,6 +340,11 @@ async def pulse_feed(
             "resolution_note": s.get("resolution_note"),
             "comments": own_comments,
             "references": s.get("references", []) or s.get("sources", []),
+            # Phase P5.19 (2026-02) — origin envelope when this signal
+            # was routed from an inbox email. Existing signals without
+            # an origin field return `None` here; FE treats `None` as
+            # "no chip" — backward-compat clean.
+            "origin": s.get("origin") or None,
             "actions_summary": {
                 "my_saved": my_saved,
                 "comments_count": len(action_comments) + len(own_comments),
