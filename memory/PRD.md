@@ -1,6 +1,31 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.14.2 — Compact landings hotfix ✅ SHIPPED (2026-02)
+
+Two user-reported regressions closed ahead of resuming P5.15. **No P5.15 files touched** — hotfix is separable.
+
+**Bug 1 — Portfolio divider misplaced** (closes P5.14.1 deferred polish item)
+- `ContextPortfolio.jsx` wrapper missing `position: relative` → absolute divider anchored to viewport, not wrapper.
+- Live DOM probe at 1280×800: divider.left=868 vs rail.left=884 (16 px gap, hugging rail); at 1024×768 divider sat at listing.right edge. Post-fix at 1280×800: divider.left=827, listing.right=828, rail.left=884 — divider sits inside the listing→rail alley as intended.
+- Single-token diff: `flex gap-10` → `flex gap-10 relative`.
+
+**Bug 2 — Solva landing top-heavy**
+- At 1280×800 the picker grid's second row sat at top=717, bottom=862 — below the 800 fold.
+- Three trims:
+  1. `SolvaApp.jsx` trust banner `mb-6 mt-4 ... px-4 py-2 text-sm` → `mb-3 mt-2 ... px-3 py-1.5 text-xs` (≈ 90 px → ≈ 50 px vertical).
+  2. `SolvaLanding.jsx` outer padding `120px 24px 80px` → `40px 24px 60px` (compact-like-Home).
+  3. `SolvaLanding.jsx` subtitle gap `64px` → `28px`; h1 margin `12px` → `8px`; h1 fontSize 44 → 40.
+- Post-fix cards row 2 sits at top=563, bottom=708 — full picker grid above the 800 fold. `document.elementFromPoint(640, 750)` returns the `solva-not-sure-link` button (usable surface BEYOND the cards above the fold).
+
+**Discipline:** v1 byte-identical 4/4 green · voice-lint clean · P5.14.2 lockdown 6/6 green (`test_phase_p5_14_2_compact_landings.py`).
+
+**Live Playwright traces:** `/tmp/p5_14_2_before_trace.py` + `/tmp/p5_14_2_after_trace.py`. Multi-viewport at 1280×800 / 1024×768 / 820×1180 / 414×896; before/after screenshots in `/tmp/p5_14_2_before/` and `/tmp/p5_14_2_after/`; `probe_results.json` carries every DOM bounding-rect.
+
+**Phase memo:** `/app/memory/sprints/P5_14_2_compact_landings.md`.
+
+
+
 ### Phase P5.14.1 — Analyze tab loader UX tightening (close-out) ✅ SHIPPED (2026-02)
 
 Real-wire stage strip on the Analyze surface — no fake timers, no synthetic progress. Every transition is driven by an actual fetch lifecycle event.
@@ -15,6 +40,8 @@ Real-wire stage strip on the Analyze surface — no fake timers, no synthetic pr
 1. SSE stream endpoint (user-chosen deferral; real-wire strip is the alternative).
 2. Sitewide `!cid` "No company selected." stub refactor (>30 lines across 5+ pages — structural sitewide pattern).
 3. Cross-test fixture state leak (Motor event-loop binding — `Future attached to different loop`; structural fix needs a per-test client factory).
+
+> **Update (P5.14.2):** the earlier deferred "`position: relative` polish on portfolio-landing wrapper" item — listed in P5.12's "Out of scope (parked)" block — is **RESOLVED**. Live evidence + the one-token diff are documented in `/app/memory/sprints/P5_14_2_compact_landings.md`.
 
 **Adjacent kill list considered, none silently fixed.**
 

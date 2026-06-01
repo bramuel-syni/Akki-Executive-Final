@@ -18,6 +18,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
+import PulseMasterTabs from "@/components/pulse/PulseMasterTabs";
 import { useAuth } from "@/contexts/AuthContext";
 // Phase E.3 (2026-05-26) — Universal Document Drawer.
 import DocumentDrawer from "@/components/documents/DocumentDrawer";
@@ -593,6 +594,9 @@ export default function Pulse() {
   if (!cid) {
     return (
       <AppShell>
+        <div className="akki-w-medium px-8 pt-6">
+          <PulseMasterTabs />
+        </div>
         <div className="akki-w-medium px-8 py-12 text-[var(--muted)]">
           Pick a workspace to see its Pulse.
         </div>
@@ -602,7 +606,10 @@ export default function Pulse() {
 
   return (
     <AppShell>
-      <div className="akki-w-medium px-8 py-10" data-testid="pulse-page">
+      <div className="akki-w-medium px-8 pt-6">
+        <PulseMasterTabs />
+      </div>
+      <div className="akki-w-medium px-8 pb-10" data-testid="pulse-page">
         <p className="akki-overline mb-2 flex items-center gap-2">
           <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Pulse · {activeContext.name}
         </p>

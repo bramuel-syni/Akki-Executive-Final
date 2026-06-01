@@ -381,6 +381,13 @@ app.include_router(admin_inbox_router.router)
 # POST. Tenant isolation: every read/write is scoped on `account_id`.
 from routers import workbook_analysis as workbook_analysis_router  # noqa: E402  P5.14
 app.include_router(workbook_analysis_router.router)
+# Phase P5.15 — Pulse Ideas by Akki (weekly cited synthesis across
+# 4 lenses). Sibling system to Solva v2; Pulse Signals surface
+# untouched. Namespace `/api/ideas/*` is intentionally NOT on the
+# CSRF allowlist; the SPA injects `X-CSRF-Token` via the axios
+# interceptor.
+from routers import ideas as ideas_router  # noqa: E402  P5.15
+app.include_router(ideas_router.router)
 
 
 # -----------------------------------------------------------------------------

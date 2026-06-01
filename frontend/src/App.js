@@ -151,6 +151,7 @@ const DocumentsPage = lazy(() => import("@/pages/DocumentsPage"));
 const WorkStudioActivity = lazy(() => import("@/pages/WorkStudioActivity"));
 const WorkStudioDocumentPage = lazy(() => import("@/pages/WorkStudioDocumentPage"));
 const Pulse = lazy(() => import("@/pages/Pulse"));
+const PulseIdeas = lazy(() => import("@/pages/PulseIdeas"));
 const SearchResults = lazy(() => import("@/pages/SearchResults"));
 const NedMeeting = lazy(() => import("@/pages/ned/NedMeeting"));
 const NedCommittee = lazy(() => import("@/pages/ned/NedCommittee"));
@@ -457,6 +458,9 @@ function App() {
           <Route path="/app/work-studio/document/:artefactId" element={<Gated><WorkStudioDocumentPage /></Gated>} />
           <Route path="/app/decks/:deckId" element={<Gated><Decks /></Gated>} />
           <Route path="/app/pulse" element={<Gated><Pulse /></Gated>} />
+          {/* Phase P5.15 — Pulse Ideas by Akki (weekly cited synthesis).
+              Sibling page; does NOT touch the Signals surface. */}
+          <Route path="/app/pulse/ideas" element={<Gated><PulseIdeas /></Gated>} />
           {/* Phase F0 — Universal Search full results page. */}
           <Route path="/app/search" element={<Gated><SearchResults /></Gated>} />
           <Route path="/app/studio/composer/:kind/:artefactId" element={<Gated><StudioComposerPage /></Gated>} />

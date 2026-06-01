@@ -495,7 +495,10 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null, inta
       style={{
         background: TOKEN.PAPER,
         minHeight: "calc(100vh - 64px)",
-        padding: "120px 24px 80px",
+        // P5.14.2 (2026-02) — top padding lowered from 120 → 40 so the
+        // picker cards land above the 1280×800 fold. Bottom kept at 60
+        // for the Recent Sessions block + page footer breathing room.
+        padding: "40px 24px 60px",
       }}
     >
       <div className="akki-w-medium">
@@ -504,9 +507,9 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null, inta
           style={{
             fontFamily: "Georgia, serif",
             fontWeight: 700,
-            fontSize: 44,
+            fontSize: 40,
             color: TOKEN.INK,
-            margin: "0 0 12px 0",
+            margin: "0 0 8px 0",
             lineHeight: 1.05,
             textAlign: "center",
           }}
@@ -517,9 +520,12 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null, inta
           style={{
             fontFamily: "Georgia, serif",
             fontStyle: "italic",
-            fontSize: 18,
+            fontSize: 17,
             color: TOKEN.DEEP,
-            margin: "0 0 64px 0",
+            // P5.14.2 (2026-02) — gap to picker grid lowered from 64 → 28
+            // (compact-like-Home target). Picker row 2 now sits above the
+            // 800 fold at 1280×800 by ~80 px of headroom.
+            margin: "0 0 28px 0",
             textAlign: "center",
           }}
           data-testid="page-subtext"

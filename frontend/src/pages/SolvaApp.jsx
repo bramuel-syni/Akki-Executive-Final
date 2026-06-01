@@ -65,10 +65,15 @@ export default function SolvaApp() {
   return (
     <AppShell>
       <WorkspaceEntryGate workspace="solva">
-        {/* Phase E Sub-task E (2026-05-16) — Trust verified by Synisense CTA */}
+        {/* P5.14.2 (2026-02) — banner slimmed so the picker cards
+            land above the 1280×800 fold. Pre-fix carried `mb-six mt-four`
+            outer margins and `px-four py-two text-sm` inner padding
+            (≈50 px tall + 40 px outer margin = 90 px of vertical real estate
+            before SolvaLanding's own 120 px top padding). Now `mt-2 mb-3 ... px-3 py-1.5 text-xs`
+            (≈30 px + 20 px = 50 px). Copy + testids + audit-timeline anchor preserved. */}
         <div
           data-testid="solva-trust-banner"
-          className="mx-auto mb-6 mt-4 flex max-w-3xl items-center gap-3 rounded-md border border-emerald-200/70 bg-emerald-50/70 px-4 py-2 text-sm text-emerald-900"
+          className="mx-auto mb-3 mt-2 flex max-w-3xl items-center gap-3 rounded-md border border-emerald-200/70 bg-emerald-50/70 px-3 py-1.5 text-xs text-emerald-900"
         >
           <span className="text-emerald-600" aria-hidden>✓</span>
           <span>

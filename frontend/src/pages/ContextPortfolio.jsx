@@ -472,8 +472,18 @@ export default function ContextPortfolio() {
 
   return (
     <AppShell>
+      {/* P5.14.2 (2026-02) — `relative` added so the absolute-positioned
+          divider below anchors to this wrapper instead of the viewport.
+          Pre-fix at 1024×768 the divider's `right: calc(340 + 40 + 32)`
+          resolved against the viewport, landing at x=611 which OVERLAPS
+          listing.right=612 (the doubled-line bug user re-reported);
+          at 1280×800 it hugged the rail (x=868) instead of sitting in
+          the gap. Adding `relative` puts divider.left at
+          wrap.right − 412 = 828 at 1280 and 612 at 1024, both inside
+          the lg:pr-10 + gap-10 alley between the listing column and
+          the rail. Closes the P5.14.1 deferred polish item. */}
       <div
-        className="akki-w-medium px-8 pt-10 pb-12 flex gap-10"
+        className="akki-w-medium px-8 pt-10 pb-12 flex gap-10 relative"
         data-testid="portfolio-landing"
       >
         {/* LEFT — main column. Phase P5.12.1 (2026-02) — removed the
