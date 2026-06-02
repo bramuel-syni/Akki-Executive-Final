@@ -37,6 +37,118 @@ log = logging.getLogger("documents.intelligence")
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Phase P1-A (2026-02) — Pulse + Brief surfacing helper.
+#
+# `document_intelligence.key_signals` is the canonical document-level
+# extracted-signal store. The Pulse feed (routers/pulse.py:177) and
+# the document-Brief gate (routers/documents.py:975) BOTH read from
+# `db.signals`. Without a bridge, the user-visible "Signals" extracted
+# by intelligence never reach either surface.
+#
+# This helper materialises each `key_signal` as a row in `db.signals`
+# with stable id `sig:from_intel:{doc_id}:{idx}` so the upsert is
+# idempotent across every caller: eager promotion at extraction time,
+# lazy promotion at Brief-click time, future bulk back-fills. Two
+# callers writing for the same `(doc_id, idx)` produce ONE row.
+#
+# Schema is the Pulse-compatible signal shape:
+#   id, context_id, type, headline, summary, confidence, sources,
+#   data_trust, state, status, created_at, promoted_from.
+# Pulse's serializer at pulse.py:280-355 reads all of these. The
+# Brief worker's downstream `signal_ids` consumer also accepts them.
+#
+# Tenant scoping: every row is stamped with the caller's `context_id`,
+# the same one Pulse's feed query filters on. No cross-tenant write.
+# ─────────────────────────────────────────────────────────────────────
+async def promote_intelligence_signals_to_pulse(
+    db,
+    *,
+    doc: Dict[str, Any],
+    context_id: str,
+    account_id: str,
+    key_signals: List[Dict[str, Any]],
+) -> List[str]:
+    """Idempotently promote `key_signals` into `db.signals`.
+
+    Returns the list of stable signal ids written/refreshed. Never
+    duplicates rows — same `(doc_id, idx)` always lands on the same
+    `sig:from_intel:{doc_id}:{idx}` row.
+
+    No-op when `key_signals` is empty.
+    """
+    if not key_signals:
+        return []
+    doc_id = doc.get("id")
+    if not doc_id or not context_id:
+        return []
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    promoted: List[str] = []
+    for idx, raw in enumerate(key_signals[:8]):
+        if not isinstance(raw, dict):
+            continue
+        sig_id = f"sig:from_intel:{doc_id}:{idx}"
+        value = (raw.get("value") or "").strip()
+        kind = (raw.get("type") or "risk").lower()
+        # Pulse serializer maps via _surface_type(s.get("type")); it
+        # accepts risk/opportunity/observation. The intelligence
+        # schema emits kpi|decision|date|figure|risk|action — coerce
+        # to the Pulse-visible bucket.
+        if kind not in ("risk", "opportunity", "observation"):
+            kind = "observation" if kind in ("kpi", "figure", "date") else "risk"
+        conf_raw = raw.get("confidence")
+        if isinstance(conf_raw, (int, float)):
+            confidence = (
+                "high" if conf_raw >= 0.7
+                else "medium" if conf_raw >= 0.4
+                else "low"
+            )
+        elif isinstance(conf_raw, str) and conf_raw.lower() in ("high", "medium", "low"):
+            confidence = conf_raw.lower()
+        else:
+            confidence = "medium"
+        headline = (value[:240] or f"Intelligence signal #{idx + 1}")
+        sig_doc = {
+            "id": sig_id,
+            "context_id": context_id,
+            "type": kind,
+            "headline": headline,
+            "summary": (
+                value
+                + (f"\n\nSource span: {raw.get('source_span')}" if raw.get("source_span") else "")
+            )[:2000],
+            "confidence": confidence,
+            "sources": [{
+                "doc_id": doc_id,
+                "doc_name": doc.get("name") or "Document",
+                "data_trust": "mixed",
+            }],
+            "references": [],
+            "data_trust": "mixed",
+            "generated_by": account_id,
+            "focus": "document_intelligence",
+            "state": "active",
+            "status": "active",
+            "comments": [],
+            "created_at": now_iso,
+            "promoted_from": "document_intelligence",
+        }
+        # `created_at` is only set on insert (preserve original surface
+        # timestamp on idempotent re-runs). The rest is rewritten so a
+        # re-extraction with refined values lands on Pulse.
+        await db.signals.update_one(
+            {"id": sig_id},
+            {
+                "$set": {k: v for k, v in sig_doc.items() if k != "created_at"},
+                "$setOnInsert": {"created_at": now_iso},
+            },
+            upsert=True,
+        )
+        promoted.append(sig_id)
+    return promoted
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Helpers — heuristic signals (no LLM, deterministic)
 # ─────────────────────────────────────────────────────────────────────
 def _doc_hash(doc: Dict[str, Any]) -> str:

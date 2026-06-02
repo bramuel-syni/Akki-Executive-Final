@@ -989,6 +989,13 @@ async def generate_briefing_from_document(
     # so the existing briefing worker contract (signal_ids) is
     # preserved. Stable id `sig:from_intel:{doc_id}:{idx}` makes the
     # upsert idempotent across re-clicks.
+    #
+    # P1-A (2026-02) — The promotion is now shared with the eager
+    # extraction-time path (`regenerate_document_intelligence`). Same
+    # helper, same stable ids: extraction promotes once, this lazy
+    # fallthrough is a no-op for any doc whose intelligence ran
+    # through the eager site. The fallthrough still matters for
+    # backfill of old intel rows that pre-date P1-A.
     if not related_signals:
         intel = await db.document_intelligence.find_one(
             {"doc_id": doc_id, "context_id": context_id},
@@ -996,61 +1003,16 @@ async def generate_briefing_from_document(
         )
         intel_signals = (intel or {}).get("key_signals") or []
         if intel_signals:
-            now_iso = datetime.now(timezone.utc).isoformat()
-            promoted: List[str] = []
-            for idx, raw in enumerate(intel_signals[:8]):
-                if not isinstance(raw, dict):
-                    continue
-                sig_id = f"sig:from_intel:{doc_id}:{idx}"
-                # Derive a short summary/headline from intelligence
-                # shape ({type, value, source_span, confidence}).
-                value = (raw.get("value") or "").strip()
-                kind = (raw.get("type") or "risk").lower()
-                if kind not in ("risk", "opportunity", "gap"):
-                    kind = "risk"
-                conf_raw = raw.get("confidence")
-                if isinstance(conf_raw, (int, float)):
-                    confidence = (
-                        "high" if conf_raw >= 0.7
-                        else "medium" if conf_raw >= 0.4
-                        else "low"
-                    )
-                elif isinstance(conf_raw, str) and conf_raw.lower() in ("high", "medium", "low"):
-                    confidence = conf_raw.lower()
-                else:
-                    confidence = "medium"
-                headline = (value[:240] or f"Intelligence signal #{idx + 1}")
-                sig_doc = {
-                    "id": sig_id,
-                    "context_id": context_id,
-                    "type": kind,
-                    "headline": headline,
-                    "summary": (
-                        value
-                        + (f"\n\nSource span: {raw.get('source_span')}" if raw.get("source_span") else "")
-                    )[:2000],
-                    "confidence": confidence,
-                    "sources": [{
-                        "doc_id": doc_id,
-                        "doc_name": doc.get("name") or "Document",
-                        "data_trust": "mixed",
-                    }],
-                    "references": [],
-                    "data_trust": "mixed",
-                    "generated_by": ctx["account"]["id"],
-                    "focus": "document_intelligence",
-                    "state": "active",
-                    "status": "active",
-                    "comments": [],
-                    "created_at": now_iso,
-                    "promoted_from": "document_intelligence",
-                }
-                await db.signals.update_one(
-                    {"id": sig_id},
-                    {"$set": sig_doc},
-                    upsert=True,
-                )
-                promoted.append(sig_id)
+            from services.documents.intelligence_service import (
+                promote_intelligence_signals_to_pulse,
+            )
+            promoted = await promote_intelligence_signals_to_pulse(
+                db,
+                doc=doc,
+                context_id=context_id,
+                account_id=ctx["account"]["id"],
+                key_signals=intel_signals,
+            )
             if promoted:
                 related_signals = [{"id": sid} for sid in promoted]
     if not related_signals:
@@ -1124,7 +1086,10 @@ async def regenerate_document_intelligence(
     # Schedule the extraction. Failure inside the task is logged + the
     # cache row stays absent so the next GET retries automatically.
     async def _run() -> None:
-        from services.documents.intelligence_service import extract_intelligence
+        from services.documents.intelligence_service import (
+            extract_intelligence,
+            promote_intelligence_signals_to_pulse,
+        )
         try:
             envelope = await extract_intelligence(
                 doc=doc, account_id=account_id, mode=mode,
@@ -1134,6 +1099,30 @@ async def regenerate_document_intelligence(
                 {"$set": envelope},
                 upsert=True,
             )
+            # P1-A (2026-02) — Eager Pulse promotion. The user-reported
+            # gap was: documents with extracted intelligence had their
+            # `key_signals` invisible on Pulse Signals + Generate-Brief
+            # until the user manually clicked Brief (which only triggered
+            # the lazy promotion). Promoting at extraction time closes
+            # the surface gap. Idempotent via stable id `sig:from_intel:
+            # {doc_id}:{idx}` — re-running extraction refreshes the
+            # signal row in place, never duplicates. The P0-A lazy
+            # promotion at briefings/generate becomes a no-op for any
+            # doc whose intelligence has already run through here.
+            try:
+                await promote_intelligence_signals_to_pulse(
+                    db,
+                    doc=doc,
+                    context_id=context_id,
+                    account_id=account_id,
+                    key_signals=envelope.get("key_signals") or [],
+                )
+            except Exception as e:  # noqa: BLE001
+                import logging as _log
+                _log.getLogger("documents.intelligence").warning(
+                    "promote_intelligence_signals_to_pulse failed for doc=%s: %s",
+                    doc_id, e,
+                )
         except Exception as e:  # noqa: BLE001
             import logging as _log
             _log.getLogger("documents.intelligence").warning(

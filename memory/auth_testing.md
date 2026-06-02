@@ -221,3 +221,90 @@ PLAYWRIGHT_BROWSERS_PATH=/pw-browsers \
 ```
 
 Expected final line: `✅ All 4 cards PASS`.
+
+---
+
+## 7. P1-A — Intelligence → Pulse Signals fan-out (no extra harness needed)
+
+`document_intelligence.key_signals` now eagerly promotes into
+`db.signals` at extraction time so the Pulse Signals feed surfaces
+them without requiring a Brief click. Same store, same shape, same
+stable id `sig:from_intel:{doc_id}:{idx}` — re-extraction refreshes
+in place, no duplicates. Code lives in
+`backend/services/documents/intelligence_service.py::promote_intelligence_signals_to_pulse`.
+
+Two call sites use the helper:
+- Eager: `regenerate_document_intelligence` `_run()` background task.
+- Lazy: `generate_briefing_from_document` fallthrough (the original
+  P0-A path — now a no-op when eager promotion has already run).
+
+Locked by `backend/tests/test_p1_a_intel_to_pulse.py` (6 tests):
+1. Helper writes Pulse-compatible rows with all serializer fields.
+2. End-to-end via `GET /api/contexts/{cid}/pulse/feed` — promoted
+   signals surface with matching headlines + doc references.
+3. Idempotency — eager + lazy callers never duplicate rows.
+4. `created_at` preserved across re-runs (Pulse recency sort
+   invariant).
+5. Tenant scoping — context A's signals never leak into context B's
+   feed (asserted via two separate authenticated sessions hitting
+   their own contexts' feeds).
+6. Empty input → no-op.
+
+Run: `pytest backend/tests/test_p1_a_intel_to_pulse.py -v`.
+
+---
+
+## 8. P1-B — Cohort approval magic-link email dispatch
+
+`services/cohort_email.py::send_approval` is gated on the env var
+`COHORT_EMAILS_ENABLED`. Pre-fix the var was unset → every approve
+short-circuited with `{"status":"flag_off"}` and the magic link was
+minted but the email never went out.
+
+**Preview env was updated this dispatch:**
+```
+COHORT_EMAILS_ENABLED=true   ← appended to /app/backend/.env
+```
+
+**Production env still needs the same setting.** The user must add
+`COHORT_EMAILS_ENABLED=true` to the production env vars before the
+prod cohort approval emails start firing. There is NOTHING in the
+code repo that fixes prod — this is environment configuration only.
+
+(Honesty Protocol: I did NOT modify `prod/.env`. I cannot. The
+preview env is mine; prod is the user's. Same gate, same fix, two
+environments.)
+
+Locked by `backend/tests/test_p1_b_cohort_approval_email.py` (4 tests):
+1. Kill-switch negative — `COHORT_EMAILS_ENABLED=false` ⇒ SendGrid
+   invoker NEVER called, response carries `flag_off`. Guards against
+   future drift in the other direction.
+2. Positive case — `COHORT_EMAILS_ENABLED=true` ⇒ `_send_via_sendgrid`
+   is called exactly once with correct recipient, subject, magic URL
+   in BOTH plain and HTML bodies, freshly-minted token surfaces.
+3. Unit-level helper — `cohort_email.send_approval` direct call wires
+   to the SendGrid invoker.
+4. Source-strict — `cohort_email.py` carries the documented gate +
+   `send_approval` entry point.
+
+Run: `pytest backend/tests/test_p1_b_cohort_approval_email.py -v`.
+
+### Verifying the live wire end-to-end
+
+The test only proves the WIRE — that `send_approval` calls
+`_send_via_sendgrid` with the right args. To verify the SendGrid HTTP
+request actually goes out in preview, an admin can:
+
+```bash
+# 1. Seed a fresh application via the public apply endpoint.
+URL="https://akki-executive.preview.emergentagent.com"
+curl -s -X POST "$URL/api/cohort/apply" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"YOUR_REAL_INBOX@example.com","name":"P1B verify",
+       "organization":"Test","role":"founder"}'
+# 2. Look up the application_id in db.cohort_applications.
+# 3. Log in as admin@akki.ai + POST /admin/cohort/applications/<id>/approve.
+# 4. Check the inbox at YOUR_REAL_INBOX@example.com — magic-link
+#    email should arrive within seconds (or check SendGrid Activity
+#    feed under the SENDGRID_FROM_EMAIL identity).
+```
