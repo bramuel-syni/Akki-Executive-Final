@@ -295,6 +295,11 @@ app.include_router(observability_router.router)  # ZZ.4 — Reasoning velocity
 app.include_router(observability_router.public_router)  # M.3 — Public mirror for /trust
 app.include_router(cohort_applications_router.router)  # M.0c — Cohort applications scaffold
 app.include_router(admin_shield_backfill_router.router)  # H4 — Shield back-fill
+# Phase test-harness (2026-02) — admin-gated QA hooks (first-session
+# reset + Continue-card recent-doc seed). Production-safe (super-admin
+# gated, MFA-grace via MFA_ADMIN_GRACE_EMAILS).
+from routers import admin_qa_hooks as admin_qa_hooks_router  # noqa: E402
+app.include_router(admin_qa_hooks_router.router)
 app.include_router(onboarding_status_router.router)  # J1 — re-intro banner + tooltips
 app.include_router(active_context_router.router)
 app.include_router(studio_router.router)

@@ -200,3 +200,125 @@ async def test_oauth_route_files_carry_the_fix_marker(transport):
         "P0-C marker stripped from auth_oauth.py. Re-anchor before "
         "removing if you're refactoring deliberately."
     )
+
+
+# ─────────────────────────────────────────────────────────────────
+# Block 3 (2026-02) — Test-harness-blocker fix.
+#
+# The above tests model the OAuth-callback shape by directly calling
+# `db.accounts.update_one` + `create_access_token`. This is stable but
+# doesn't exercise the FastAPI route itself.
+#
+# The dispatch asked for a deterministic test that:
+#   • Seeds an `accounts` row with `last_activity_at` stale 10+ days.
+#   • Invokes the OAuth `finish` HANDLER directly with a stubbed
+#     Emergent session payload.
+#   • Asserts last_activity_at is now within the last 5 seconds.
+#   • Asserts a follow-up `/api/me` call with the issued cookie
+#     returns 200 (NOT 401 session_idle_timeout).
+#
+# The seam: `routers.auth_oauth._fetch_emergent_session_data(session_id)`
+# at line 122 is the single dependency on the Emergent provider. Patch
+# it to return a stub identity. Everything downstream — find-or-create,
+# JWT mint, set_auth_cookies, last_activity_at write — runs verbatim.
+# ─────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_oauth_google_finish_route_with_stubbed_session_then_me_returns_200(
+    transport, monkeypatch,
+):
+    """End-to-end through the FastAPI route, with the Emergent session
+    fetch stubbed. Honours the dispatch contract exactly.
+    """
+    from core import db
+    from routers import auth_oauth as auth_oauth_router
+
+    email = f"p0c-route-{uuid.uuid4().hex[:6]}@example.com"
+    name = "P0-C Route-level OAuth user"
+
+    # Pre-seed an account in OAuth-only shape (no password_hash) with
+    # a `last_activity_at` 10 days stale — far past the 30-minute
+    # idle window the middleware enforces.
+    aid = "acct-p0c-route-" + uuid.uuid4().hex[:10]
+    stale_ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    await db.accounts.insert_one({
+        "id": aid,
+        "email": email,
+        "email_lc": email.lower(),
+        "name": name,
+        "password_hash": None,
+        "declared_role": "user",
+        "oauth_provider": "google",
+        "last_activity_at": stale_ts,
+        "created_at": (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(),
+    })
+
+    # Stub the single external dependency in the OAuth finish handler.
+    async def _stub_fetch_emergent_session_data(session_id: str):
+        return {
+            "email": email,
+            "name": name,
+            "picture": None,
+            "id": "google-oauth2|p0c-route-stub",
+        }
+
+    monkeypatch.setattr(
+        auth_oauth_router,
+        "_fetch_emergent_session_data",
+        _stub_fetch_emergent_session_data,
+    )
+    # ASGITransport runs over `http://test` — httpx will drop cookies
+    # carrying the `Secure` attribute. The production cookie hardening
+    # (`set_auth_cookies` at core.py:386-397 with COOKIE_SECURE=1)
+    # would prevent the cookie jar from persisting the access_token
+    # for the next request. Disable Secure FOR THIS TEST ONLY via the
+    # documented env override (core.py:386 reads COOKIE_SECURE at
+    # request time). Production unaffected.
+    monkeypatch.setenv("COOKIE_SECURE", "0")
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Invoke the OAuth finish route with the stubbed session_id.
+        r = await client.post(
+            "/api/auth/oauth/google/finish",
+            json={"session_id": "p0c-stub-session-" + uuid.uuid4().hex[:8]},
+        )
+        # Per the route contract this returns 200 with {ok, account_id,
+        # email, name, first_session_status} and Set-Cookie headers
+        # carrying the JWT.
+        assert r.status_code == 200, (
+            f"OAuth finish route did not return 200: "
+            f"{r.status_code} {r.text[:300]}"
+        )
+        body = r.json()
+        assert body.get("ok") is True, body
+        assert (body.get("email") or "").lower() == email.lower(), body
+
+        # 2. last_activity_at MUST be within the last 5 seconds.
+        fresh = await db.accounts.find_one(
+            {"id": aid}, {"last_activity_at": 1, "_id": 0}
+        )
+        last = datetime.fromisoformat(fresh["last_activity_at"])
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - last).total_seconds()
+        assert 0 <= age < 5, (
+            f"last_activity_at not refreshed by OAuth finish route — "
+            f"age={age}s, stale_ts was {stale_ts}"
+        )
+
+        # 3. Follow-up /api/me with the cookie jar from the OAuth
+        # response MUST return 200 (NOT 401 session_idle_timeout).
+        # httpx auto-carries cookies from the prior `r` via the
+        # client's cookie jar.
+        me = await client.get("/api/auth/me")
+        assert me.status_code == 200, (
+            f"/api/me did not return 200 after OAuth finish — "
+            f"got {me.status_code} {me.text[:300]}.\n"
+            f"This is the user-visible 'Re-enter your password' trap "
+            f"regression. Stale ts={stale_ts}, age now={age}s."
+        )
+        me_body = me.json()
+        # /api/me returns {account: {email, ...}, contexts: [...]}.
+        me_email = ((me_body.get("account") or {}).get("email") or "").lower()
+        assert me_email == email.lower(), me_body

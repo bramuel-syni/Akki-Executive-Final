@@ -125,8 +125,19 @@ export default function CycleList() {
   // `?wizard=1`. Previously this query param was ignored; the user
   // landed on the cycle list and had to click "Add Cycle" manually,
   // which broke the spec §3 Stage 3 acceptance ("cycle door routes
-  // to the T5 Cycle Setup Wizard"). Consumed-once: we strip the
-  // param via replaceState so refresh doesn't re-open.
+  // to the T5 Cycle Setup Wizard").
+  //
+  // ## Why `setSearch(replace: true)` strips `?wizard=1` immediately
+  // (e1_tester P0-B TC2a observed this; recorded for future agents):
+  // The param is a TRIGGER, not state. Once we open the modal, the
+  // trigger has fired and must not refire — otherwise (a) a browser
+  // refresh re-opens the wizard, (b) clicking "X" to dismiss leaves
+  // the trigger in the URL and any nav-back operation re-opens it,
+  // (c) the URL bar carries operational noise users could share. The
+  // strip happens AFTER `setAddOpen(true)` so the wizard mounts and
+  // remains open via React state (`addOpen`), independent of the URL.
+  // Spec G21 contract: "wizard opens" — the modal mounting IS the
+  // canonical signal. The URL strip is intentional. Do not undo.
   useEffect(() => {
     if (search.get("wizard") !== "1") return;
     setAddOpen(true);
