@@ -461,7 +461,17 @@ export default function ContextPortfolio() {
     switchContext(cid).catch(() => { /* AuthContext surfaces toasts */ });
   };
 
-  const firstName = (account?.name || "there").split(" ")[0];
+  // P-Cleanup B (2026-02) — defensive trim + emptiness check.
+  // Pre-fix shape: `(account?.name || "there").split(" ")[0]` —
+  // whitespace-only names ("   ") tripped the truthy branch and
+  // rendered "Good morning, ." Locked by source-strict test in
+  // backend/tests/test_p_cleanup_b_greeting_logic.py.
+  // Canonical contract:
+  //   • name="Sam Patel"  → firstName="Sam"
+  //   • name="Yuki"        → firstName="Yuki"
+  //   • name=null|""|" "   → firstName="there"
+  const rawName = (account?.name || "").trim();
+  const firstName = rawName ? rawName.split(/\s+/)[0] : "there";
   const greeting = timeAwareGreeting();
 
   // Format a metric value: number for >=0, "—" while loading.

@@ -111,7 +111,20 @@ async def _compute_status(account: Dict[str, Any]) -> Dict[str, Any]:
     show_tc_tooltip = (
         not tc_dismissed and not acknowledged_at
     )
-    show_help_tooltip = not help_dismissed
+    # P-Cleanup C (2026-02) — Mirror the trust-center tooltip gate.
+    # Pre-fix `show_help_tooltip = not help_dismissed` showed the
+    # "Help is one click away" black callout to ANY user who hadn't
+    # dismissed it, including post-onboarding returning users for
+    # whom the tooltip's wording is irrelevant — surfacing as the
+    # reported "hidden black callout tooltip artifact under Help".
+    # The line 107 docstring comment already named the intended
+    # condition ("if they haven't seen the re-intro and never
+    # dismissed the tooltip, show it") — this is implementation
+    # drift, not a new product decision. Locked by
+    # tests/test_p_cleanup_c_help_tooltip_suppression.py.
+    show_help_tooltip = (
+        not help_dismissed and not acknowledged_at
+    )
 
     # J3 (2026-05-25, ratified spec §3 Stage 5) — Trust Center
     # introduction (3-stop tour overlay on the Trust Center page).
