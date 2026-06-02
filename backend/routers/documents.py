@@ -980,6 +980,79 @@ async def generate_briefing_from_document(
         },
         {"_id": 0, "id": 1},
     ).to_list(50)
+    # P0-A (2026-02) — State-read parity. If the workspace-level
+    # `db.signals` filter returns empty, fall through to the
+    # document-level `document_intelligence.key_signals` array (the
+    # SAME source the Drawer's Signals tab renders at
+    # `DocumentDrawer.jsx:310 — intel?.key_signals`). When found,
+    # materialise them as proper `db.signals` rows scoped to this doc
+    # so the existing briefing worker contract (signal_ids) is
+    # preserved. Stable id `sig:from_intel:{doc_id}:{idx}` makes the
+    # upsert idempotent across re-clicks.
+    if not related_signals:
+        intel = await db.document_intelligence.find_one(
+            {"doc_id": doc_id, "context_id": context_id},
+            {"_id": 0, "key_signals": 1},
+        )
+        intel_signals = (intel or {}).get("key_signals") or []
+        if intel_signals:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            promoted: List[str] = []
+            for idx, raw in enumerate(intel_signals[:8]):
+                if not isinstance(raw, dict):
+                    continue
+                sig_id = f"sig:from_intel:{doc_id}:{idx}"
+                # Derive a short summary/headline from intelligence
+                # shape ({type, value, source_span, confidence}).
+                value = (raw.get("value") or "").strip()
+                kind = (raw.get("type") or "risk").lower()
+                if kind not in ("risk", "opportunity", "gap"):
+                    kind = "risk"
+                conf_raw = raw.get("confidence")
+                if isinstance(conf_raw, (int, float)):
+                    confidence = (
+                        "high" if conf_raw >= 0.7
+                        else "medium" if conf_raw >= 0.4
+                        else "low"
+                    )
+                elif isinstance(conf_raw, str) and conf_raw.lower() in ("high", "medium", "low"):
+                    confidence = conf_raw.lower()
+                else:
+                    confidence = "medium"
+                headline = (value[:240] or f"Intelligence signal #{idx + 1}")
+                sig_doc = {
+                    "id": sig_id,
+                    "context_id": context_id,
+                    "type": kind,
+                    "headline": headline,
+                    "summary": (
+                        value
+                        + (f"\n\nSource span: {raw.get('source_span')}" if raw.get("source_span") else "")
+                    )[:2000],
+                    "confidence": confidence,
+                    "sources": [{
+                        "doc_id": doc_id,
+                        "doc_name": doc.get("name") or "Document",
+                        "data_trust": "mixed",
+                    }],
+                    "references": [],
+                    "data_trust": "mixed",
+                    "generated_by": ctx["account"]["id"],
+                    "focus": "document_intelligence",
+                    "state": "active",
+                    "status": "active",
+                    "comments": [],
+                    "created_at": now_iso,
+                    "promoted_from": "document_intelligence",
+                }
+                await db.signals.update_one(
+                    {"id": sig_id},
+                    {"$set": sig_doc},
+                    upsert=True,
+                )
+                promoted.append(sig_id)
+            if promoted:
+                related_signals = [{"id": sid} for sid in promoted]
     if not related_signals:
         raise HTTPException(
             status_code=400,
