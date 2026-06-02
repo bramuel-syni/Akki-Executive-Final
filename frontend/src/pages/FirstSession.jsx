@@ -320,13 +320,29 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip, refreshAuth }) {
         return;
       }
       if (door === "demo") {
-        // J2 (G22) — backend stamped `seed_marker_visible_for` on the
-        // DEMO_T5_BACKLOG rows and flipped status → completed. Drop
-        // the user on the seeded demo cycle so the compilation chips
-        // are immediately reachable.
+        // J2 (G22 ratified) — backend stamped `seed_marker_visible_for`
+        // on the DEMO_T5_BACKLOG rows and flipped status → completed.
+        // P0-B Card 3 (2026-02) — Drop the user on the **Cycle Manager**
+        // root per spec G22, NOT on a specific demo-cycle detail page.
+        // The demo backlog rows are visible on the Cycle Manager listing
+        // by virtue of the seed-marker stamp the backend just made.
+        // Side-effect (demo attach) already happened in the
+        // `/me/first-session/choose-door` POST above — only the
+        // navigation target changes here.
         try { if (refreshAuth) await refreshAuth(); } catch { /* noop */ }
-        const landing = res?.data?.landing_cycle_id || "demo-t5backlog-cycle-001";
-        navigate(`/app/cycle/${landing}`);
+        navigate("/app/cycle");
+        return;
+      }
+      if (door === "upload") {
+        // P0-B Card 2 (2026-02) — Door B per Spec G21. Navigate to the
+        // Document Journal with the `?upload=1` flag — AppShell reads
+        // the flag on mount and opens the shared UploadModal (the same
+        // "ADD TO DOCUMENT JOURNAL" surface used by every other Akki
+        // entry point). Previous behaviour landed on
+        // `FirstSessionWorking` which polled `/me/review-queue` forever
+        // and never gave the user any upload UI.
+        try { if (refreshAuth) await refreshAuth(); } catch { /* noop */ }
+        navigate("/app/documents?upload=1");
         return;
       }
       if (door === "cycle") {

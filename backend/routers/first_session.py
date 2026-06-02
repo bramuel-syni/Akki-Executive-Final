@@ -518,7 +518,42 @@ async def choose_door(
         )
         return {"state": state}
 
-    # upload — working-step flow.
+    # P0-B Card 2 (2026-02, Spec G21 Door B) — upload door.
+    # Mirrors demo/cycle/solve exit semantics. Frontend navigates to
+    # `/app/documents?upload=1` (AppShell auto-opens the shared
+    # UploadModal on the `?upload=1` flag). The user has explicitly
+    # chosen their entry path — FirstSession polling is moot. Flip
+    # status → completed so the `FirstSessionGuard` (frontend/src/App.js)
+    # does NOT bounce the navigation back to /app/first-session.
+    #
+    # Before this fix: status stayed "in_progress", current_step =
+    # "working", FirstSessionWorking rendered an endless "Reading the
+    # document" spinner polling `/me/review-queue` — there was no
+    # upload UI anywhere. Confirmed by P0-B routing trace screenshot
+    # at `/tmp/p0_b_routing/FAIL_card_2_upload.jpg` (pre-fix).
+    if body.door == "upload":
+        state["door_taken"] = "upload"
+        state["current_step"] = "done"
+        state["status"] = "completed"
+        state["completed_at"] = _iso(_now())
+        state["artefact"] = {
+            "kind": "upload",
+            "id": None,  # filled in by the upload modal's POST /documents response
+        }
+        await _persist_state(current["id"], state)
+        await write_audit(
+            ctx_id, current["id"], "first_session.door_upload",
+            "account", current["id"], {"door": "upload"},
+        )
+        await write_audit(
+            ctx_id, current["id"], "first_session.completed",
+            "account", current["id"], {"door": "upload", "exit": "upload_door"},
+        )
+        return {"state": state}
+
+    # Fallback (no other doors today). Keep the old working-step path
+    # for forward-compat — any future door that needs a polling stage
+    # will land here until it is upgraded with explicit exit semantics.
     state["status"] = "in_progress"
     state["door_taken"] = body.door
     state["current_step"] = "working"

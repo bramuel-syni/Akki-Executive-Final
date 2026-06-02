@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 // Note: framer-motion was removed from this file iter50 — the staggered
 // nav entrance caused a first-paint flash and added zero value after the
 // initial visit. Plain divs render instantly.
@@ -271,6 +271,24 @@ export default function AppShell({ children }) {
     window.addEventListener("akki:open-upload-modal", onOpenUpload);
     return () => window.removeEventListener("akki:open-upload-modal", onOpenUpload);
   }, []);
+
+  // P0-B Card 2 (2026-02) — First-session "Upload a document" door
+  // (Spec G21/Door B). FirstSession.jsx navigates here with
+  // `?upload=1` after the user picks the Upload door. AppShell reads
+  // the flag on mount, opens the shared UploadModal, and strips the
+  // query param so a subsequent reload doesn't re-open the modal.
+  // Mirrors the global `akki:open-upload-modal` event path used by
+  // other entry points — single modal, multiple triggers.
+  const location = useLocation();
+  useEffect(() => {
+    const sp = new URLSearchParams(location.search);
+    if (sp.get("upload") === "1") {
+      setUploadOpen(true);
+      sp.delete("upload");
+      const qs = sp.toString();
+      navigate(`${location.pathname}${qs ? `?${qs}` : ""}`, { replace: true });
+    }
+  }, [location.search, location.pathname, navigate]);
 
   useEffect(() => {
     if (paletteOpen) setTimeout(() => paletteInputRef.current?.focus(), 50);

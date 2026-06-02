@@ -227,6 +227,20 @@ async def oauth_google_finish(
     refresh = create_refresh_token(account_id)
     set_auth_cookies(response, access, refresh)
 
+    # P0-C (2026-02) — Refresh `last_activity_at` on the account doc.
+    # Mirrors the password-login fix at `routers/auth.py:126-135`
+    # (Phase P5.5). Without this, the FIRST authenticated API call
+    # after a Google OAuth finish trips SessionTimeoutMiddleware's
+    # idle check against a stale `last_activity_at` from a prior
+    # session, returning 401 `session_idle_timeout` even though the
+    # session was just minted — surfacing as the user-visible "Re-enter
+    # your password to keep this session active" toast and a forced
+    # password modal that an OAuth-only user has no password for.
+    await db.accounts.update_one(
+        {"id": account_id},
+        {"$set": {"last_activity_at": datetime.now(timezone.utc).isoformat()}},
+    )
+
     # Phase P5.3 (2026-02) — consume the cohort magic link if supplied.
     # If invalid/expired/consumed, fail the OAuth finish rather than
     # silently signing the user in via a non-cohort path.
@@ -704,6 +718,17 @@ async def oauth_microsoft_callback(
     refresh = create_refresh_token(account_id)
     redirect_resp = RedirectResponse(url=next_url, status_code=302)
     set_auth_cookies(redirect_resp, access, refresh)
+
+    # P0-C (2026-02) — Refresh `last_activity_at`. See the matching
+    # comment on the Google finish handler above. Same trap, same
+    # fix — without this, the Microsoft OAuth callback redirects to
+    # /app and the very next authenticated API call returns 401
+    # `session_idle_timeout` against the stale-from-prior-session
+    # `last_activity_at`, triggering the re-auth modal.
+    await db.accounts.update_one(
+        {"id": account_id},
+        {"$set": {"last_activity_at": datetime.now(timezone.utc).isoformat()}},
+    )
 
     # Phase P5.3 (2026-02) — cohort magic-link consume.
     # When the OAuth start packed `mlt` (magic_link_token) into the

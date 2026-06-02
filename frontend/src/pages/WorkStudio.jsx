@@ -597,7 +597,7 @@ function BriefDrawer({ open, onClose, aid, contextId }) {
 // Main
 // =============================================================================
 export default function WorkStudio() {
-  const { activeContext } = useAuth();
+  const { activeContext, switchContext } = useAuth();
   const cid = activeContext?.id;
   const [searchParams, setSearchParams] = useSearchParams();
   // T3.3 G8 ratified routing — Board/Committee Pack cards navigate to
@@ -608,6 +608,27 @@ export default function WorkStudio() {
   // would throw `ReferenceError` at runtime. Caught by the new
   // `no-undef` ESLint rule (Step 2 Phase C).
   const navigate = useNavigate();
+
+  // P0-B Card 4 (2026-02) — Home "Continue" + portfolio deep-links
+  // mint `/app/work-studio?doc_id=X&context_id=Y` (company_home.py:554).
+  // Without this effect, the page would render against the user's
+  // CURRENT `activeContext.id` even if the URL pointed at a different
+  // workspace — the DocumentDrawer would then call
+  // `/contexts/<wrong-cid>/documents/<doc_id>` and 404. This effect
+  // honours the URL contract: on mount (and any subsequent change of
+  // `?context_id=`), if the URL specifies a context different from the
+  // active one, switch to it before any data fetch fires.
+  useEffect(() => {
+    const urlContextId = searchParams.get("context_id");
+    if (urlContextId && urlContextId !== cid) {
+      switchContext(urlContextId, { fromContextId: cid }).catch(() => {
+        /* If the user lacks access to that context, switchContext
+           rejects; leave the user on their current context — the
+           drawer will then surface an empty/404 state which is
+           preferable to silent context mismatch. */
+      });
+    }
+  }, [searchParams, cid, switchContext]);
 
   // Tab state — URL-backed. Phase E.1 (2026-05-26) — default tab is
   // now the merged `cycle_main_and_committee_pack`.
