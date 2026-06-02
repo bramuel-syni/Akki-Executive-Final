@@ -441,6 +441,14 @@ def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
     for k in ("deletion_requested_at", "deletion_scheduled_for"):
         if a.get(k) is not None:
             out[k] = a[k]
+    # C1-revised Phase A (2026-02) — Surface `has_set_password` so the
+    # SPA can mount the SetPasswordGuard. Only the strict-bool `False`
+    # gates; legacy rows where the field is missing pass through
+    # without the field surfacing on the wire (lean response).
+    if a.get("has_set_password") is False:
+        out["has_set_password"] = False
+    elif a.get("has_set_password") is True:
+        out["has_set_password"] = True
     # Solva v2 artefact (Slice 2b, 2026-05-29) — surface
     # `feature_flags.solva_v2` so the frontend helper
     # `solvaV2EnabledFor(account)` can route the ARTEFACT view between

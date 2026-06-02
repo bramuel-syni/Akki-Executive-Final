@@ -87,6 +87,8 @@ const StatusPage = lazy(() => import("@/pages/StatusPage"));
 const ThrowDiagnostic = lazy(() => import("@/pages/ThrowDiagnostic"));
 // Phase P4.D (2026-02) — Cohort magic-link landing page.
 const WelcomePage = lazy(() => import("@/pages/WelcomePage"));
+// C1-revised Phase A (2026-02) — First-login password-set page.
+const SetPasswordRequired = lazy(() => import("@/pages/SetPasswordRequired"));
 const CohortCopyEditor = lazy(() => import("@/pages/admin/CohortCopyEditor"));
 const EarlyAccessOptIn = lazy(() => import("@/pages/EarlyAccessOptIn"));
 const Questions = lazy(() => import("@/pages/Questions"));
@@ -217,6 +219,34 @@ function FirstSessionGuard({ children }) {
   return children;
 }
 
+/**
+ * SetPasswordGuard — C1-revised Phase A (2026-02).
+ *
+ * Authenticated guard. When the account row carries
+ * `has_set_password === false` (strict bool), any /app/* destination
+ * is short-circuited to `/auth/set-password`. Legacy accounts where
+ * the flag is missing / null / true pass through (mirrors the server-
+ * side gate in `services/first_login_password_set.py`).
+ *
+ * Co-resident with FirstSessionGuard inside <Gated>. Order matters:
+ * the password-set step happens BEFORE the first-session wizard so a
+ * cohort applicant lands on the password screen before the intake
+ * questions (which would otherwise post and 428).
+ */
+function SetPasswordGuard({ children }) {
+  const { account } = useAuth();
+  const location = useLocation();
+  if (!account) return children;
+  if (account.has_set_password !== false) return children;
+  return (
+    <Navigate
+      to="/auth/set-password"
+      replace
+      state={{ from: (location.pathname || "") + (location.search || "") }}
+    />
+  );
+}
+
 /** E.4 (2026-05-26) — /app/documents/:id redirects to the Universal
  *  Document Drawer (Phase E.3). The drawer mounts on /app/work-studio
  *  and listens for `?doc_id=` to open. Old bookmarks survive via this
@@ -233,20 +263,22 @@ function DocumentRouteSwitch() {
 function Gated({ children }) {
   return (
     <ProtectedRoute>
-      <FirstSessionGuard>
-        <HardLockGuard>
-          {/* Phase R.5.b (2026-05-27) — Day-16 soft-warning banner on top. */}
-          <Day16Banner />
-          {children}
-          {/* Phase R.4 (2026-05-27) — Feedback widget on every gated surface. */}
-          <FeedbackWidget />
-          {/* Phase R.5.b.2 (2026-05-27) — Day-14 special-ask modal (surfaces conditionally). */}
-          <SpecialAskModal />
-          {/* Phase Y (2026-05-27) — First-login onboarding briefs (self-gates
-              by `onboarding_briefs_shown_at == null` from the account row). */}
-          <OnboardingBriefsModal />
-        </HardLockGuard>
-      </FirstSessionGuard>
+      <SetPasswordGuard>
+        <FirstSessionGuard>
+          <HardLockGuard>
+            {/* Phase R.5.b (2026-05-27) — Day-16 soft-warning banner on top. */}
+            <Day16Banner />
+            {children}
+            {/* Phase R.4 (2026-05-27) — Feedback widget on every gated surface. */}
+            <FeedbackWidget />
+            {/* Phase R.5.b.2 (2026-05-27) — Day-14 special-ask modal (surfaces conditionally). */}
+            <SpecialAskModal />
+            {/* Phase Y (2026-05-27) — First-login onboarding briefs (self-gates
+                by `onboarding_briefs_shown_at == null` from the account row). */}
+            <OnboardingBriefsModal />
+          </HardLockGuard>
+        </FirstSessionGuard>
+      </SetPasswordGuard>
     </ProtectedRoute>
   );
 }
@@ -356,6 +388,20 @@ function App() {
           {/* Phase U (2026-05-27) — OAuth callback. PUBLIC route, no auth
               gate (the session_id exchange is the auth event). */}
           <Route path="/oauth/callback" element={<OAuthCallback />} />
+          {/* C1-revised Phase A (2026-02) — First-login password-set page.
+              Authenticated (ProtectedRoute) but OUTSIDE <Gated> so the
+              SetPasswordGuard doesn't loop the user onto itself. The
+              page itself short-circuits to /app/ when has_set_password
+              is not strict-bool false (so a legacy user manually
+              navigating here gets bounced back). */}
+          <Route
+            path="/auth/set-password"
+            element={
+              <ProtectedRoute>
+                <SetPasswordRequired />
+              </ProtectedRoute>
+            }
+          />
           {/* M.4: legacy /sandbox/legacy + /sandbox/generating + /quick-results
               retired. Phase J (2026-05-12): /sandbox is now the new
               Generative Sandbox MVP. Legacy /legacy-sandbox routes

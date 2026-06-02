@@ -205,6 +205,11 @@ async def consume_magic_link(
             "id":              account_id,
             "email":           email,
             "password_hash":   None,                  # passwordless — magic-link only
+            # C1-revised Phase A (2026-02) — cohort invitation accept
+            # without a password trips the first-login gate so the SPA
+            # routes them to /auth/set-password before any state-
+            # changing call.
+            "has_set_password": False,
             "name":            pre.get("first_name") or email.split("@")[0],
             "declared_role":   None,                  # Q2 — wizard collects
             "mfa_enabled":     False,

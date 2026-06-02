@@ -184,6 +184,11 @@ async def oauth_google_finish(
             "email":           email,
             "email_lc":        email,
             "password_hash":   None,                  # passwordless — OAuth only
+            # C1-revised Phase A (2026-02) — OAuth-only accounts have
+            # no password yet; gate them until they set one. Sister
+            # write in routers/cohort_magic_link.py (cohort consume)
+            # and routers/auth_magic.py (direct magic consume).
+            "has_set_password": False,
             "auth_provider":   "google",
             "oauth_providers": ["google"],
             "name":            name or email.split("@")[0],
@@ -684,6 +689,9 @@ async def oauth_microsoft_callback(
             "email":           email,
             "email_lc":        email,
             "password_hash":   None,
+            # C1-revised Phase A (2026-02) — sister write to the Google
+            # path. New Microsoft-OAuth account has no password.
+            "has_set_password": False,
             "auth_provider":   "microsoft",
             "oauth_providers": ["microsoft"],
             "microsoft_oid":   oid or None,

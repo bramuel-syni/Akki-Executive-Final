@@ -51,6 +51,19 @@ class DeclareRoleIn(BaseModel):
     declared_role: AccountRole
 
 
+class SetPasswordIn(BaseModel):
+    """C1-revised Phase A (2026-02) — POST /api/auth/set-password.
+
+    Authenticated body. The caller is identified by their bearer/
+    cookie session; this endpoint sets a fresh password + flips
+    `has_set_password` to True so the FirstLoginPasswordSetGate
+    drops on the next request. Idempotent — re-running while already
+    `True` rotates the password (same shape as the existing
+    `reset-password` and `force-reset-password` paths).
+    """
+    password: str = Field(min_length=10, max_length=128)
+
+
 class MFAVerifyIn(BaseModel):
     code: str = Field(min_length=6, max_length=6)
 
@@ -74,6 +87,10 @@ async def register(
         "name": body.name.strip(),
         "declared_role": "undeclared",
         "password_hash": hash_password(body.password),
+        # C1-revised Phase A (2026-02) — register sets the password
+        # explicitly, so the new account never trips the
+        # FirstLoginPasswordSetGate.
+        "has_set_password": True,
         "mfa_enabled": False,
         "mfa_secret": None,
         "default_context_id": None,
@@ -287,6 +304,48 @@ async def declare_role(
                       {"declared_role": body.declared_role})
     refreshed = await db.accounts.find_one({"id": current["id"]}, {"_id": 0})
     return {"account": sanitize_account(refreshed)}
+
+
+# -----------------------------------------------------------------------------
+# C1-revised Phase A (2026-02) — POST /api/auth/set-password
+# -----------------------------------------------------------------------------
+@router.post("/auth/set-password")
+async def set_password(
+    body: SetPasswordIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Set a password on an authenticated session.
+
+    Use case: a user who arrived via cohort magic-link or OAuth (and
+    therefore has `password_hash=None` + `has_set_password=False`)
+    needs to set a password to drop the first-login gate. This is the
+    SAME endpoint that the SPA's `SetPasswordGuard` posts to.
+
+    Side effects:
+      • `accounts.password_hash` = bcrypt(body.password).
+      • `accounts.has_set_password` = True (drops the gate on next
+        request; legacy rows where the field is missing/null are
+        unaffected — only the strict-bool False gates).
+      • Refreshes `last_activity_at` so the next request doesn't
+        idle-timeout right after the set (mirrors P5.5 login fix).
+      • Audit row `account.password_set`.
+
+    Idempotent: re-running while already True rotates the password.
+    """
+    now_iso = _iso(_now())
+    await db.accounts.update_one(
+        {"id": current["id"]},
+        {"$set": {
+            "password_hash":     hash_password(body.password),
+            "has_set_password":  True,
+            "last_activity_at":  now_iso,
+        }},
+    )
+    await write_audit(
+        None, current["id"], "account.password_set", "account", current["id"], {},
+    )
+    refreshed = await db.accounts.find_one({"id": current["id"]}, {"_id": 0})
+    return {"ok": True, "account": sanitize_account(refreshed)}
 
 
 # -----------------------------------------------------------------------------

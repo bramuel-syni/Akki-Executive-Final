@@ -1,6 +1,68 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### C1-revised Phase A + Phase B — First-Login Password Set & Contribution Magic Link Codes ✅ SHIPPED (2026-02)
+
+**Combined P0 dispatch.** User-chosen autonomous decision (c) + (ii) — ship both phases back-to-back with one combined memo and suite-size delta.
+
+**Phase A — First-Login Password Set** (NEW behaviour):
+- New field `accounts.has_set_password` (boolean, optional). Strict-bool `false` triggers the gate; legacy `null | missing | true` all bypass.
+- New middleware `services/first_login_password_set.py` — blocks POST/PUT/PATCH/DELETE only; allowlists auth-entry/exit + the new endpoint. 428 with `{detail: {code: "password_set_required", message, set_password_url}}` on hit. Escape hatch `FIRST_LOGIN_PASSWORD_GATE_DISABLED=1` (incident-only).
+- New `POST /api/auth/set-password` endpoint (authenticated, CSRF-gated, idempotent) — flips the flag, sets `password_hash`, refreshes `last_activity_at`. Audit `account.password_set`.
+- Five entry paths now write the flag: `/auth/register` → True · `/auth/magic-link/consume` mode=password → True · `GET /auth/magic/{token}` direct → False · OAuth Google (new acct) → False · OAuth Microsoft (new acct) → False.
+- Sanitize_account surfaces the field ONLY for strict True/False (legacy lean response).
+- SPA: new `/auth/set-password` page (`pages/SetPasswordRequired.jsx`) + `SetPasswordGuard` wrapping `<Gated>` BEFORE `<FirstSessionGuard>`. Self-bounces to `/app/` if flag isn't strict-bool false.
+
+**Phase B — Task-Contribution Magic Link Error Codes** (REFACTOR — happy path was NOT broken; verified pre-dispatch with live preview):
+- Verifier `GET /api/tasks/contribute/{token}` returns structured `{detail: {code, message}}` distinguishing six failure modes:
+  | Status | Code | Trigger |
+  |--------|------|---------|
+  | 404 | `link_invalid` | Token never existed |
+  | 410 | `link_revoked` | `used=True` + `revoked_reason` |
+  | 410 | `link_used` | `used=True`, no `revoked_reason` |
+  | 410 | `link_expired` | Past `expires_at` |
+  | 410 | `task_gone` | Token valid, task deleted |
+  | 410 | `not_on_team` | Token valid, contributor removed |
+- `ContributorPortal.jsx` reads `r.json().detail.code` and renders 7 narratives; `data-error-code` attribute pins the active narrative for Playwright.
+
+**Lockdown tests:**
+- `backend/tests/test_c1_a_first_login_password_set.py` (16 tests).
+- `backend/tests/test_c1_b_contributor_link_codes.py` (10 tests).
+
+**Raw Playwright traces** (NO generic testing subagents per Honesty Protocol):
+- `/tmp/c1a_set_password_trace.py` — 4 viewports × 6 step assertions = **24/24 PASS**.
+- `/tmp/c1b_contribution_trace.py` — 4 viewports × 7 scenarios = **28/28 PASS**.
+
+**Discipline gates (verbatim):**
+- v1 byte-identical guard: `4 passed, 15 warnings in 3.47s`.
+- Voice-lint: `voice_lint: clean across customer-copy surfaces.`
+- Broad bundle (15 files): `139 passed, 2 deselected, 22 warnings in 238.15s (0:03:58)`.
+- Suite-size delta from prior baseline: **+26 net new (16 Phase A + 10 Phase B)**.
+
+**No silent deviations:** 2 pre-existing P4 test failures (`test_p4_a_receipt_flag_off_logs_redacted` + `test_p4_b_decline_writes_audit_and_skips_email_when_flag_off`) surfaced under broad sweep. Confirmed via `git stash` → re-run → `git stash pop` that they predate C1-revised. Root cause: P1-B set `COHORT_EMAILS_ENABLED=true` in `backend/.env`; both tests assert legacy `flag_off` shape and now see `test_mode_disabled` instead (both still SendGrid-safe under conftest). **I did NOT touch these tests** (out of scope). Two clean repair options next dispatch: (a) `conftest.py` adds `COHORT_EMAILS_ENABLED=false` for test env, or (b) update the 2 assertions to accept the new safe terminal status.
+
+**Files touched (verbatim `git status --short`):**
+```
+M backend/core.py
+M backend/routers/auth.py
+M backend/routers/auth_magic.py
+M backend/routers/auth_oauth.py
+M backend/routers/cohort_magic_link.py
+M backend/routers/tasks.py
+M backend/server.py
+M frontend/src/App.js
+M frontend/src/pages/ContributorPortal.jsx
+?? backend/services/first_login_password_set.py
+?? backend/tests/test_c1_a_first_login_password_set.py
+?? backend/tests/test_c1_b_contributor_link_codes.py
+?? frontend/src/pages/SetPasswordRequired.jsx
+```
+
+**Memos:** `memory/sprints/C1_revised_first_login_password_set_and_contribution_link_codes.md`. Documentation in `memory/auth_testing.md` §12 (Phase A) + §13 (Phase B). Test credentials updated with Phase A + Phase B repro recipes.
+
+**Resume contract:** Pause for e1_tester re-verification before next phase. Remaining open backlog unchanged: 🟡 P8 SendGrid Inbound Parse (BLOCKED on user) · 🟢 "Questions for you" (deprioritized by user) · 🟢 P5.18 OAuth migration (BLOCKED on GCP creds) · 🟢 Task Manager bug 27 / Fig 42 · 🔵 future/backlog.
+
+
 ### Phase P5.22 — CSRF-rotted wire test refresh ✅ SHIPPED (2026-02, test-rig only)
 
 Closes the LOW-priority test-rig item carried since the P5.13 audit fix list: 6 wire-level tests in `test_h2_5_shield_uniformity.py` were failing under broad pytest runs with `403 csrf_token_missing`. **Mechanical fix at `backend/tests/conftest.py` only — zero production source code changes.**

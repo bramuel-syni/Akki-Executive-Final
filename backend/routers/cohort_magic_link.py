@@ -249,6 +249,11 @@ async def consume_magic_link(body: ConsumeIn, response: Response):
     if not acc:
         from core import iso, now as _core_now
         acc_id = uuid.uuid4().hex
+        # C1-revised Phase A (2026-02) — set `has_set_password=True`
+        # when the cohort applicant sets a password at consume time
+        # (mode=password). OAuth-mode consume happens via the OAuth
+        # callback flow and lands a separate `False` write below.
+        password_set = (body.mode == "password" and bool(body.password))
         acc = {
             "id":            acc_id,
             "email":         email,
@@ -259,6 +264,7 @@ async def consume_magic_link(body: ConsumeIn, response: Response):
             "is_superadmin": False,
             "auth_provider": "password",
             "password_hash": hash_password(body.password) if body.mode == "password" else None,
+            "has_set_password": password_set,
             "created_at":    iso(_core_now()),
             "cohort_application_id": row["application_id"],
         }
@@ -271,11 +277,15 @@ async def consume_magic_link(body: ConsumeIn, response: Response):
                 {"id": acc["id"]},
                 {"$set": {
                     "password_hash": hash_password(body.password),
+                    # C1-revised Phase A — any explicit password set
+                    # flips the gate off.
+                    "has_set_password": True,
                     "auth_provider": "password",
                     "cohort_application_id": row["application_id"],
                 }},
             )
             acc["password_hash"] = hash_password(body.password)
+            acc["has_set_password"] = True
 
     # Mark the link consumed.
     await db.cohort_magic_links.update_one(

@@ -897,17 +897,50 @@ class _ContributorSubmitIn(BaseModel):
 
 
 async def _resolve_contributor_token(token: str) -> Dict[str, Any]:
+    """C1-revised Phase B (2026-02) — distinguish error codes so the
+    public contributor portal can render a precise narrative instead
+    of a catch-all "Link not valid".
+
+    Error map:
+      • Token never existed → 404 link_invalid
+      • Token revoked via re-invite (used=True + revoked_reason set)
+        → 410 link_revoked
+      • Token spent (used=True, no revoked_reason) → 410 link_used
+      • Token past expires_at → 410 link_expired
+
+    Happy path returns the token row unchanged. Same shape callers
+    expect (just-row Dict[str, Any]).
+    """
+    # 1. Look up by token regardless of used flag so we can
+    #    distinguish revoked vs missing.
     row = await db.task_contributor_tokens.find_one(
-        {"token": token, "used": False}, {"_id": 0},
+        {"token": token}, {"_id": 0},
     )
     if not row:
-        raise HTTPException(status_code=404, detail="Invalid or expired link")
+        raise HTTPException(status_code=404, detail={
+            "code":    "link_invalid",
+            "message": "This invitation link doesn't match anything we issued.",
+        })
+    if row.get("used") is True:
+        if row.get("revoked_reason"):
+            raise HTTPException(status_code=410, detail={
+                "code":    "link_revoked",
+                "message": ("This invitation was replaced by a newer one. "
+                            "Use the most recent email from the task owner."),
+            })
+        raise HTTPException(status_code=410, detail={
+            "code":    "link_used",
+            "message": "This invitation has already been submitted.",
+        })
     try:
         exp = datetime.fromisoformat((row.get("expires_at") or "").replace("Z", "+00:00"))
     except (ValueError, TypeError):
         exp = None
     if exp and exp < datetime.now(timezone.utc):
-        raise HTTPException(status_code=410, detail="Link expired")
+        raise HTTPException(status_code=410, detail={
+            "code":    "link_expired",
+            "message": "This invitation has expired. Ask the task owner for a fresh one.",
+        })
     return row
 
 
@@ -927,12 +960,29 @@ async def contributor_view(token: str):
          "due_date": 1, "team": 1, "output_spec": 1},
     )
     if not t:
-        raise HTTPException(status_code=404, detail="Task not found")
+        # C1-revised Phase B (2026-02) — the token row exists and is
+        # valid but its task has been deleted. Return 410 with a
+        # distinct code so the FE narrative says "this task no longer
+        # exists" instead of the catch-all "invalid link".
+        raise HTTPException(status_code=410, detail={
+            "code":    "task_gone",
+            "message": ("The task this invitation pointed to has been "
+                        "deleted. Ask the task owner for a fresh invite."),
+        })
     me = next(
         (m for m in (t.get("team") or [])
          if (m.get("email") or "").lower() == row["contributor_email"]),
         None,
     )
+    if me is None:
+        # C1-revised Phase B (2026-02) — token valid + task exists but
+        # the contributor has been removed from the team. Distinct
+        # 410 so the FE can render a precise narrative.
+        raise HTTPException(status_code=410, detail={
+            "code":    "not_on_team",
+            "message": ("You're no longer on the team for this task. "
+                        "Ask the task owner if this was a mistake."),
+        })
     peers = [
         {"name": m.get("name"), "role": m.get("role")}
         for m in (t.get("team") or [])

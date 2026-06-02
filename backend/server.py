@@ -432,6 +432,16 @@ app.add_middleware(SessionTimeoutMiddleware)
 
 
 # -----------------------------------------------------------------------------
+# C1-revised Phase A (2026-02) — First-login password-set gate.
+# Blocks POST/PUT/PATCH/DELETE for accounts with `has_set_password === False`
+# (strict bool — legacy null/missing/true bypass). Toggle via
+# FIRST_LOGIN_PASSWORD_GATE_DISABLED=1.
+# -----------------------------------------------------------------------------
+from services.first_login_password_set import FirstLoginPasswordSetGateMiddleware  # noqa: E402
+app.add_middleware(FirstLoginPasswordSetGateMiddleware)
+
+
+# -----------------------------------------------------------------------------
 # Phase P2 B.2 (2026-02) — Rate limiting.
 # Per-IP + per-user rate-limit dependency. Routes opt in via
 # `_rl: None = Depends(rate_limit("bucket_name"))`. See services/rate_limit.py.

@@ -5,7 +5,9 @@ exercise auth-gated flows in the **preview environment**. It pairs
 with `/app/memory/test_credentials.md` (raw credentials + context_id
 table) — read both.
 
-Last updated: 2026-02 — Phase P0-B / P0-C / Test-harness hooks.
+Last updated: 2026-02 — Phase P0-B / P0-C / Test-harness hooks /
+C1-revised Phase A (First-login password set) + Phase B
+(Contribution magic-link error codes).
 
 ---
 
@@ -308,3 +310,137 @@ curl -s -X POST "$URL/api/cohort/apply" \
 #    email should arrive within seconds (or check SendGrid Activity
 #    feed under the SENDGRID_FROM_EMAIL identity).
 ```
+
+
+
+---
+
+## 12. C1-revised Phase A — First-login password-set gate (2026-02)
+
+**Spec:** Block any account marked `has_set_password === false`
+(strict bool) from state-changing API calls until they set a
+password. Legacy rows where the field is missing, null, or true
+must bypass — only the strict-bool false triggers the gate.
+
+### Field semantics
+| Entry path                                   | `has_set_password` written |
+|----------------------------------------------|----------------------------|
+| `POST /api/auth/register` (form signup)      | **True**                   |
+| `POST /api/auth/magic-link/consume` mode=password | **True**             |
+| `POST /api/auth/magic-link/consume` mode=oauth (TBD) | False             |
+| `GET  /api/auth/magic/{token}` (direct)      | **False**                  |
+| `GET  /api/auth/oauth/google/finish`  (new acct) | **False**              |
+| `GET  /api/auth/oauth/microsoft/finish` (new acct) | **False**            |
+| Legacy rows pre-2026-02                       | **missing** → bypass       |
+
+### Endpoint contract
+* `POST /api/auth/set-password` — body `{password: str}`. Idempotent.
+  Sets `password_hash` + flips `has_set_password=True` + refreshes
+  `last_activity_at`. Returns `{ok: true, account: sanitize(...)}`.
+* Sanitize_account surfaces the field ONLY for strict True/False;
+  legacy missing stays lean (no field on the wire).
+
+### Middleware shape
+`services/first_login_password_set.py` — wraps
+POST/PUT/PATCH/DELETE only. Allowlists auth-entry/exit + the new
+endpoint (`/api/auth/set-password`, `/api/auth/magic*`,
+`/api/auth/oauth/*`, `/api/csrf`, etc.). 428
+`{detail: {code: "password_set_required", message, set_password_url}}`
+on hit. Escape hatch: `FIRST_LOGIN_PASSWORD_GATE_DISABLED=1`.
+
+### SPA shape
+* `/auth/set-password` page (`pages/SetPasswordRequired.jsx`) —
+  authenticated. Self-bounces to `/app/` if
+  `account.has_set_password !== false`.
+* `SetPasswordGuard` in `App.js` wraps inside `<Gated>` BEFORE
+  `FirstSessionGuard`. Redirects `/app/*` → `/auth/set-password`
+  when strict-bool false.
+
+### Seeding a gated test account
+```python
+import bcrypt, uuid
+from datetime import datetime, timezone
+await db.accounts.insert_one({
+    "id":            uuid.uuid4().hex,
+    "email":         "c1a-gated@example.com",
+    "email_lc":      "c1a-gated@example.com",
+    "password_hash": bcrypt.hashpw(b"TempPass2026!", bcrypt.gensalt()).decode(),
+    "has_set_password": False,
+    "name":          "C1A Gated",
+    "first_name":    "C1A",
+    "declared_role": "executive",
+    "mfa_enabled":   False,
+    "first_session": {"status": "skipped"},  # skip first-session, gate at password
+    "created_at":    datetime.now(timezone.utc).isoformat(),
+})
+```
+Login → SPA bounces to `/auth/set-password`. Submit a 10+ char
+password → land on `/app/`. Subsequent `/auth/set-password` visits
+self-bounce.
+
+### Lockdown tests
+`backend/tests/test_c1_a_first_login_password_set.py` (16 tests):
+1. Source-strict (file exists, middleware wired, endpoint exists, sanitize_account surfaces field, 5 entry-paths write the field).
+2. Middleware blocks POST when strict-bool false (428).
+3. Middleware allows POST when null / true / missing (legacy bypass).
+4. Middleware allows GET regardless.
+5. `/api/auth/set-password` is allowlisted and flips the flag + drops the gate on the next request.
+6. Idempotent re-set rotates the password without error.
+7. `/api/auth/register` always writes True.
+8. Legacy missing → field NOT on wire (sanitize lean response).
+
+### Raw Playwright trace
+`/tmp/c1a_set_password_trace.py` — drives signin → bounce →
+mismatch error → length error → success → self-bounce. 4 viewports
+(1280 / 1024 / 820 / 414). 24/24 step assertions PASS.
+
+---
+
+## 13. C1-revised Phase B — Contribution magic link codes (2026-02)
+
+**Spec:** Distinguish task-contribution magic-link failure modes so
+the contributor portal renders a precise narrative per case instead
+of the catch-all "Link not valid".
+
+### Error code map (verifier `GET /api/tasks/contribute/{token}`)
+| Status | Code           | Trigger                                                |
+|--------|----------------|--------------------------------------------------------|
+| 404    | `link_invalid` | Token never existed in `task_contributor_tokens`       |
+| 410    | `link_revoked` | Token has `used=True` + `revoked_reason` (rotated)     |
+| 410    | `link_used`    | Token has `used=True` with no `revoked_reason`         |
+| 410    | `link_expired` | Token past `expires_at`                                |
+| 410    | `task_gone`    | Token valid but referenced `tasks` row missing         |
+| 410    | `not_on_team`  | Token valid + task exists but contributor not on team  |
+| 200    | —              | Happy path (regression guard)                          |
+
+Response shape: `{detail: {code: "<code>", message: "<narrative>"}}`.
+
+### SPA shape
+`ContributorPortal.jsx` reads `r.json().detail.code` and renders
+one of seven narratives. The error surface carries
+`data-error-code="<code>"` so Playwright + e1_tester can assert
+the active narrative deterministically.
+
+### Lockdown tests
+`backend/tests/test_c1_b_contributor_link_codes.py` (10 tests):
+1. Source-strict (backend codes + frontend narratives present).
+2. Each of the 6 failure modes returns the precise code + status.
+3. Happy path STILL returns 200 with full contribution payload.
+4. Cross-tenant leak guard — a token-row's contributor_email
+   mismatching the team membership returns `not_on_team` and the
+   other contributor's data does NOT leak in the response body.
+
+### Raw Playwright trace
+`/tmp/c1b_contribution_trace.py` — seeds 7 (task, token) pairs per
+viewport, visits each `/contribute/<token>` URL, asserts
+`data-error-code` + narrative title. 4 viewports. 28/28 scenarios
+PASS.
+
+### Honesty note — what was NOT broken
+The happy path verifier ALREADY worked end-to-end pre-Phase B
+(verified via fresh task creation + token mint + GET
+`/api/tasks/contribute/{token}` returning 200). The
+user-perceived "magic link invalid" symptom mapped to three
+indistinguishable 404 paths (revoked token / task deleted /
+contributor removed). Phase B disambiguates the codes; the issuance
++ happy-path verifier code paths are unchanged.

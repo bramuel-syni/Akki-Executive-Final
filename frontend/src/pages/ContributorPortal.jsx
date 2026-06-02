@@ -40,8 +40,20 @@ export default function ContributorPortal() {
     setState((s) => ({ ...s, loading: true }));
     try {
       const r = await api(`/api/tasks/contribute/${encodeURIComponent(token)}`);
-      if (r.status === 404 || r.status === 410) {
-        setState({ loading: false, data: null, error: r.status === 410 ? "expired" : "invalid" });
+      if (!r.ok) {
+        // C1-revised Phase B (2026-02) — parse the structured error
+        // code so we can render a precise narrative. Falls back to
+        // legacy "invalid" / "expired" buckets for older callers.
+        let code = "invalid";
+        try {
+          const body = await r.json();
+          const c = body?.detail?.code;
+          if (c) code = c;
+          else if (r.status === 410) code = "link_expired";
+        } catch (_e) {
+          if (r.status === 410) code = "link_expired";
+        }
+        setState({ loading: false, data: null, error: code });
         return;
       }
       const data = await r.json();
@@ -114,14 +126,51 @@ export default function ContributorPortal() {
   }
 
   if (state.error || !state.data) {
+    // C1-revised Phase B (2026-02) — precise narratives per code.
+    // Codes: link_invalid · link_revoked · link_used · link_expired
+    //        · task_gone · not_on_team · network · (legacy: invalid,
+    //        expired).
+    const code = state.error || "link_invalid";
+    const isExpired = code === "link_expired" || code === "expired";
+    let title = "Link not valid";
+    let body = "We couldn't find that invitation. The link may have been revoked or is malformed.";
+    if (isExpired) {
+      title = "Invitation expired";
+      body = "Magic links work for 30 days. Ask the task owner to re-send.";
+    } else if (code === "link_revoked") {
+      title = "Invitation replaced";
+      body = "This invitation was replaced by a newer one. Use the most recent email from the task owner.";
+    } else if (code === "link_used") {
+      title = "Already submitted";
+      body = "This invitation has already been submitted. Reach out to the task owner if you need to add more.";
+    } else if (code === "task_gone") {
+      title = "Task no longer exists";
+      body = "The task this invitation pointed to has been deleted. Ask the task owner for a fresh invite.";
+    } else if (code === "not_on_team") {
+      title = "You're not on this team";
+      body = "You're no longer listed as a contributor on this task. Ask the task owner if this was a mistake.";
+    } else if (code === "network") {
+      title = "Connection problem";
+      body = "We couldn't reach Akki. Check your connection and refresh the page.";
+    }
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--parchment)] p-6" data-testid="contributor-portal-error">
+      <div
+        className="min-h-screen flex items-center justify-center bg-[var(--parchment)] p-6"
+        data-testid="contributor-portal-error"
+        data-error-code={code}
+      >
         <div className="max-w-md text-center">
-          <p className="akki-serif text-[22px] text-[var(--ink)] mb-2">Link not valid</p>
-          <p className="text-[13px] text-[var(--muted)]">
-            {state.error === "expired"
-              ? "This invitation has expired. Ask the task owner to re-send."
-              : "We couldn't find that invitation. The link may have been revoked or is malformed."}
+          <p
+            className="akki-serif text-[22px] text-[var(--ink)] mb-2"
+            data-testid="contributor-portal-error-title"
+          >
+            {title}
+          </p>
+          <p
+            className="text-[13px] text-[var(--muted)]"
+            data-testid="contributor-portal-error-body"
+          >
+            {body}
           </p>
         </div>
       </div>
