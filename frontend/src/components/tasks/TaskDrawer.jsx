@@ -417,6 +417,24 @@ function ContributionsTab({ task, onPatched }) {
   const meEmail = (account?.email || "").toLowerCase();
 
   const team = task.team || [];
+  // Bug 27 / Fig 42 (2026-02 fork-resume) — Email Reply mode plumbing.
+  // The `contributor_comments[]` field is now surfaced by
+  // `_sanitize_task` (`backend/routers/tasks.py`). Each row carries
+  // `{id, kind, reviewer, comment, subject, doc_ids[], created_at}`.
+  // `kind === "email_body"` is the inbound email-reply branch;
+  // `kind === "contributor"` is the portal /comment branch.
+  const allComments = Array.isArray(task.contributor_comments)
+    ? task.contributor_comments
+    : [];
+  const commentsByEmail = React.useMemo(() => {
+    const map = {};
+    for (const c of allComments) {
+      const k = (c.reviewer || "").toLowerCase();
+      if (!k) continue;
+      (map[k] = map[k] || []).push(c);
+    }
+    return map;
+  }, [allComments]);
 
   const patch = async (contributorId, status, note) => {
     setWorking(contributorId + status);
@@ -591,6 +609,76 @@ function ContributionsTab({ task, onPatched }) {
                       Cancel
                     </Button>
                   </div>
+                </div>
+              )}
+              {/* Bug 27 / Fig 42 (2026-02 fork-resume) — inline render
+                  of the contributor's reply body + attached doc IDs +
+                  subject + timestamp. This is the read-side surface
+                  for the email-reply plumbing fix: the data was always
+                  being written to `tasks.contributor_comments[]`; this
+                  panel makes it visible to the task owner. Both
+                  `kind: "email_body"` (inbound email reply) and
+                  `kind: "contributor"` (portal /comment) render here.
+                */}
+              {(commentsByEmail[(m.email || "").toLowerCase()] || []).length > 0 && (
+                <div
+                  className="mt-3 border-t border-[var(--rule)] pt-3 space-y-2"
+                  data-testid={`task-drawer-contributions-comments-${i}`}
+                >
+                  <p className="text-[10px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">
+                    Contributor replies ({(commentsByEmail[(m.email || "").toLowerCase()] || []).length})
+                  </p>
+                  {(commentsByEmail[(m.email || "").toLowerCase()] || []).map((c) => (
+                    <div
+                      key={c.id}
+                      className="bg-[var(--parchment)] rounded-sm p-2.5 border border-[var(--rule)]"
+                      data-testid={`task-drawer-contributions-comment-${i}-${c.id}`}
+                      data-comment-kind={c.kind}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span
+                          className="text-[10px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]"
+                          data-testid={`task-drawer-contributions-comment-kind-${i}-${c.id}`}
+                        >
+                          {c.kind === "email_body" ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Mail className="w-3 h-3" /> Email reply
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1">
+                              <MessageCircle className="w-3 h-3" /> Portal comment
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-[10.5px] font-mono text-[var(--muted)]">
+                          {c.created_at ? new Date(c.created_at).toLocaleString() : ""}
+                        </span>
+                      </div>
+                      {c.subject && (
+                        <p
+                          className="text-[11.5px] text-[var(--deep)] mb-1 italic"
+                          data-testid={`task-drawer-contributions-comment-subject-${i}-${c.id}`}
+                        >
+                          re: {c.subject}
+                        </p>
+                      )}
+                      <p
+                        className="text-[12px] text-[var(--ink)] whitespace-pre-wrap break-words"
+                        data-testid={`task-drawer-contributions-comment-body-${i}-${c.id}`}
+                      >
+                        {c.comment}
+                      </p>
+                      {Array.isArray(c.doc_ids) && c.doc_ids.length > 0 && (
+                        <p
+                          className="text-[11px] text-[var(--muted)] mt-1.5 inline-flex items-center gap-1"
+                          data-testid={`task-drawer-contributions-comment-docs-${i}-${c.id}`}
+                        >
+                          <FileText className="w-3 h-3" />
+                          {c.doc_ids.length} attached document{c.doc_ids.length === 1 ? "" : "s"}
+                        </p>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </li>

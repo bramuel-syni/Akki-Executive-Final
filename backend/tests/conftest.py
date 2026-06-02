@@ -54,6 +54,20 @@ os.environ.setdefault("RATE_LIMIT_DISABLED", "1")
 # exclusively in test infra so bramuel / mugwe.marion / akki@syni.ai
 # do not receive synthetic emails from CI runs or fork agents.
 os.environ.setdefault("COHORT_NOTIFY_DISABLED", "true")
+# C1-revised post-bundle (2026-02 fork-resume) — P4 cohort funnel
+# test rot repair. P1-B flipped `COHORT_EMAILS_ENABLED=true` in
+# preview `.env` so cohort approval/decline emails actually fire.
+# The two pre-existing P4 tests
+# (`test_p4_a_receipt_flag_off_logs_redacted`,
+#  `test_p4_b_decline_writes_audit_and_skips_email_when_flag_off`)
+# assert the legacy `flag_off` shape and now see
+# `test_mode_disabled` instead. Force the flag off for the test
+# session so the legacy assertions stay green while P1-B's own
+# coverage (which monkeypatches the env to "true") is unaffected.
+# Both shapes are SendGrid-safe under conftest's
+# COHORT_NOTIFY_DISABLED=true guard above. Production never sets
+# this env — preview's `.env` is the source of truth there.
+os.environ["COHORT_EMAILS_ENABLED"] = "false"
 import httpx as _httpx  # noqa: E402
 _orig_request = _httpx.AsyncClient.request
 async def _patched_request(self, method, url, *args, **kwargs):

@@ -129,7 +129,44 @@ def _sanitize_task(t: Dict[str, Any]) -> Dict[str, Any]:
         # tasks without an origin field return `None` here; FE
         # treats `None` as "no chip" — backward-compat clean.
         "origin":           t.get("origin") or None,
+        # Bug 27 / Fig 42 (2026-02 fork-resume) — Email Reply mode
+        # plumbing fix. Surface the contributor-comment list (pushed
+        # by `_handle_task_contributor_reply` on each inbound email-
+        # reply, AND by the public `/contribute/<token>/comment`
+        # endpoint when the contributor uses the portal) so the task
+        # owner's UI can render the body excerpt + attached doc IDs +
+        # subject + timestamp inline on the Contributions tab. The
+        # data was always being written; this surfaces it.
+        "contributor_comments": _sanitize_comments(t.get("contributor_comments") or []),
     }
+
+
+def _sanitize_comments(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Bug 27 / Fig 42 — sanitize each contributor comment row.
+
+    Strip Mongo `_id`, normalize shape across both write paths
+    (`kind: "contributor"` from portal, `kind: "email_body"` from
+    inbound email), cap body at 4000 chars defensively. Most-recent
+    first so the FE doesn't need to reverse.
+    """
+    cleaned: List[Dict[str, Any]] = []
+    for c in rows:
+        if not isinstance(c, dict):
+            continue
+        cleaned.append({
+            "id":         c.get("id"),
+            "kind":       c.get("kind") or "contributor",
+            "reviewer":   c.get("reviewer") or "",
+            "comment":    (c.get("comment") or "")[:4000],
+            "subject":    c.get("subject") or "",
+            "doc_ids":    list(c.get("doc_ids") or []),
+            "created_at": c.get("created_at"),
+        })
+    # Sort by created_at desc, falling back to insertion order.
+    def _key(r: Dict[str, Any]) -> str:
+        return r.get("created_at") or ""
+    cleaned.sort(key=_key, reverse=True)
+    return cleaned
 
 
 def _compute_readiness(task: Dict[str, Any]) -> int:

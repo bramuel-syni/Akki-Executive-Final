@@ -7,7 +7,8 @@ table) — read both.
 
 Last updated: 2026-02 — Phase P0-B / P0-C / Test-harness hooks /
 C1-revised Phase A (First-login password set) + Phase B
-(Contribution magic-link error codes).
+(Contribution magic-link error codes) / Bug 27 (Email Reply mode
+plumbing) + tooltip on /auth/set-password.
 
 ---
 
@@ -444,3 +445,115 @@ user-perceived "magic link invalid" symptom mapped to three
 indistinguishable 404 paths (revoked token / task deleted /
 contributor removed). Phase B disambiguates the codes; the issuance
 + happy-path verifier code paths are unchanged.
+
+
+---
+
+## 14. Bug 27 / Fig 42 — Email Reply mode plumbing (2026-02 fork-resume)
+
+**Symptom:** Email replies from contributors land in MongoDB
+(`tasks.contributor_comments[]`) but were invisible to the task
+owner because `_sanitize_task` stripped the field on the wire.
+The right-rail audit feed showed the verb
+(`submitted_via_email`) but no body content.
+
+**Root cause:** Read-side adapter miss (option (c) in our defect
+taxonomy). Write paths were fine; sender auth + audit + status
+flip + confirmation reply all worked. Only the GET-task wire was
+broken.
+
+**Fix:**
+- `routers/tasks.py::_sanitize_task` now includes
+  `contributor_comments` (sanitized + most-recent-first).
+- `_sanitize_comments(rows)` helper normalises both write paths:
+  | kind | source |
+  |------|--------|
+  | `email_body` | inbound webhook → `_handle_task_contributor_reply` |
+  | `contributor` | portal `POST /tasks/contribute/<token>/comment` |
+- `TaskDrawer.jsx::ContributionsTab` renders the comments inline
+  under each contributor row.
+
+### Seeding a task with an email-reply comment
+```python
+import asyncio, os, uuid
+from datetime import datetime, timezone
+from motor.motor_asyncio import AsyncIOMotorClient
+
+async def main():
+    cli = AsyncIOMotorClient(os.environ["MONGO_URL"])
+    db = cli[os.environ["DB_NAME"]]
+    admin = await db.accounts.find_one({"email": "admin@akki.ai"}, {"_id":0})
+    tid = f"task-bug27-fe-{uuid.uuid4().hex[:10]}"
+    contributor = "review@example.com"
+    now = datetime.now(timezone.utc).isoformat()
+    await db.tasks.insert_one({
+        "id": tid, "account_id": admin["id"], "owner_id": admin["id"],
+        "name": "Bug27 trace", "objective": "x", "success_criteria": "x",
+        "team": [{"name":"Reviewer","email":contributor,"role":"Reviewer",
+                  "contribution":"Review section 1","contribution_mode":"email_reply",
+                  "status":"submitted"}],
+        "state": "active", "created_at": now, "updated_at": now,
+        "contributor_comments": [{
+            "id": uuid.uuid4().hex, "kind": "email_body",
+            "reviewer": contributor, "subject": "Re: review",
+            "comment": "Body of the reply…", "doc_ids": ["doc-x"],
+            "created_at": now,
+        }],
+    })
+    print(tid)
+
+asyncio.run(main())
+```
+
+Open `/app/task-manager?task_id=<tid>` as admin → Contributions
+tab → the email-reply row renders with `data-comment-kind="email_body"`.
+
+### Lockdown tests
+`backend/tests/test_bug27_email_reply_plumbing.py` (7 tests):
+1. Source-strict + write-path regression guard.
+2. End-to-end ingestion + read round-trip.
+3. Sanitize_task direct call surfaces shape + most-recent-first.
+4. Sender-mismatch silently dropped.
+5. Cross-tenant isolation via `task_account_id`.
+6. Attached docs surface in `doc_ids[]` + `documents` row exists.
+
+### Raw Playwright trace
+`/tmp/bug27_fe_trace.py` — seeds a task with an email-reply,
+admin opens Task Manager → drawer → Contributions tab, asserts
+comment row mounted with `data-comment-kind="email_body"`,
+body + subject + doc count visible. **4 viewports × 5 steps =
+20/20 PASS.**
+
+---
+
+## 15. Tooltip on /auth/set-password heading (2026-02 fork-resume)
+
+Heading-only enhancement. Verbatim copy: **"Akki uses your
+password as a fallback if your Google or Microsoft account
+becomes unreachable."**
+
+A11y wire:
+- Heading `id="set-password-heading-text"`.
+- Trigger `aria-label`, `aria-describedby` → heading id.
+- Content `role="tooltip"` + `data-testid="set-password-tooltip-content"`.
+- Hover AND keyboard focus both open (Radix default).
+
+### Lockdown tests
+`backend/tests/test_set_password_tooltip.py` (5 tests) — source-
+strict + form-unchanged guard.
+
+### Raw Playwright a11y trace
+`/tmp/item3_tooltip_trace.py` — gated user → /auth/set-password
+→ trigger visible → a11y wiring → hover shows copy → keyboard
+focus shows copy. **4 viewports × 5 steps = 20/20 PASS.**
+
+---
+
+## 16. P4 cohort funnel test rot fix (2026-02 fork-resume)
+
+`backend/tests/conftest.py` now sets
+`COHORT_EMAILS_ENABLED=false` for the test session. P1-B's own
+tests use `monkeypatch.setenv` so they're unaffected; the 2 P4
+tests now see the legacy `flag_off` shape again. **P4 file
+14/14, was 12/14.** Production env unchanged.
+

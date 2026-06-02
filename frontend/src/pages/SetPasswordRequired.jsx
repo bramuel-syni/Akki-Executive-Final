@@ -21,6 +21,13 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { HelpCircle } from "lucide-react";
 import { toast } from "sonner";
 import WebsiteShell from "@/website/WebsiteShell";
 import { useAuth } from "@/contexts/AuthContext";
@@ -84,10 +91,32 @@ export default function SetPasswordRequired() {
       <section className="website-section section-reveal" data-testid="set-password-required">
         <p className="kicker">ONE LAST STEP</p>
         <h1
-          className="akki-serif text-4xl sm:text-5xl text-[var(--ink)] mb-2 break-words"
+          className="akki-serif text-4xl sm:text-5xl text-[var(--ink)] mb-2 break-words inline-flex items-baseline gap-3"
           data-testid="set-password-heading"
+          id="set-password-heading-text"
         >
           Set a password, {firstName}.
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger
+                type="button"
+                aria-label="Why am I being asked to set a password?"
+                aria-describedby="set-password-heading-text"
+                className="inline-flex items-center text-[var(--muted)] hover:text-[var(--deep)] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--oxblood)] rounded-sm"
+                data-testid="set-password-tooltip-trigger"
+              >
+                <HelpCircle className="w-4 h-4" strokeWidth={1.5} aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipContent
+                side="right"
+                className="max-w-xs text-[12.5px] leading-snug bg-[var(--ink)] text-white px-3 py-2"
+                data-testid="set-password-tooltip-content"
+                role="tooltip"
+              >
+                Akki uses your password as a fallback if your Google or Microsoft account becomes unreachable.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </h1>
         <p className="dek mb-8 break-words" style={{ maxWidth: "60ch" }}>
           You signed in once. To get back in next time without your

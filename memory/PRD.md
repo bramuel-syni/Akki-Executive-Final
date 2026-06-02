@@ -1,6 +1,67 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Bug 27 / Fig 42 + P4 rot fix + Tooltip on /auth/set-password ✅ SHIPPED (2026-02 fork-resume)
+
+**Focused trio dispatch — one combined memo.** User instructed: bug 27 as primary, P4 rot 2-line fix, tooltip on /auth/set-password heading. No scope creep.
+
+**Item 1 — Bug 27 / Fig 42 — Email Reply mode plumbing:**
+- **Honesty note:** The literal QA-doc text for "Bug 27 / Fig 42" is NOT in `/app/memory` (the 24-may QA aggregate has no reference to "Task Manager bug 27", "Fig 42", or "Email Reply mode"). Surfaced this divergence before touching code. Ground-truth code trace identified the actual break.
+- **Classification (per spec):** option **(c)** — write succeeded, read-side adapter missed it. The full inbound chain (SendGrid webhook → `_dispatch_inbound_payload` → `_handle_task_contributor_reply` → token resolve → sender auth → documents insert → `contributor_comments.$push` → team status flip → audit row → confirmation reply) was correctly writing `tasks.contributor_comments[]`. BUT `routers/tasks.py::_sanitize_task` did NOT include `contributor_comments` in the GET response, so the task owner never saw the body / subject / attached doc IDs.
+- **Fix scope (strict):** Backend `_sanitize_task` + new `_sanitize_comments(rows)` helper that strips `_id`, trims body to 4000 chars, sorts most-recent-first, and normalises shape across both write paths (`kind: "email_body"` from inbound; `kind: "contributor"` from portal). Frontend `ContributionsTab` renders the comments inline under each contributor row with body + subject + timestamp + attached doc count + `data-comment-kind` attribute.
+- **NOT touched:** inbound classifier, token resolver, sender check, doc-write loop, team status flip, audit, confirmation reply, issuance side, webhook URL config.
+
+**Item 2 — P4 cohort funnel test rot fix:**
+- Chose repair option (a) — `conftest.py` adds `COHORT_EMAILS_ENABLED=false` for the test session. P1-B's tests use `monkeypatch.setenv` (which restores per-test) so they're unaffected. The 2 P4 `flag_off` assertions are restored.
+- **P4 file: 14/14, was 12/14.** P1-B file: 4/4 (no regression).
+- Option (b) — widening P4 assertions to accept any safe terminal status — was rejected because it loses regression signal.
+
+**Item 3 — Tooltip on /auth/set-password heading:**
+- Heading-only. No form fields, button copy, or flow changes (locked in by `test_form_fields_button_copy_and_flow_unchanged`).
+- Reuses existing shadcn `Tooltip` primitive — NO new dependency.
+- Verbatim copy: *"Akki uses your password as a fallback if your Google or Microsoft account becomes unreachable."*
+- A11y wire: heading `id`, trigger `aria-label`+`aria-describedby`, content `role="tooltip"`, hover AND keyboard focus both open.
+
+**Lockdown tests:**
+- `backend/tests/test_bug27_email_reply_plumbing.py` (7 tests — source-strict + end-to-end ingest + read shape + sender-mismatch + cross-tenant isolation + attached docs).
+- `backend/tests/test_set_password_tooltip.py` (5 tests — source-strict + form-unchanged guard).
+- `backend/tests/conftest.py` (1-line addition).
+
+**Raw Playwright traces (NO generic testing subagents):**
+- `/tmp/bug27_fe_trace.py` — admin → Task Manager → drawer → Contributions tab → email-reply row mounts at 4 viewports. **20/20 PASS.**
+- `/tmp/item3_tooltip_trace.py` — gated user → /auth/set-password → tooltip a11y wire + hover + keyboard focus at 4 viewports. **20/20 PASS.**
+- Re-confirmed C1-revised Phase A trace (24/24 PASS) + Phase B trace (28/28 PASS).
+
+**Discipline gates (verbatim):**
+- Solva v1 byte-identical guard: `4 passed, 15 warnings in 3.28s`.
+- Voice-lint: `voice_lint: clean across customer-copy surfaces.`
+- Broad bundle (17 files): **`153 passed, 22 warnings in 446.51s (0:07:26)`**.
+- Suite-size delta from prior dispatch: **+14 net new** (7 bug 27 + 5 tooltip + 2 P4 unblocked). 139 → 153.
+
+**No silent deviations:**
+1. Bug 27 QA-doc text not in `/app/memory` — surfaced + code-level defect identified.
+2. Cross-test fixture state leak (`Future attached to a different loop`) — pre-existing structural defer, **NOT touched** per your earlier explicit instruction.
+3. P4 tests run ~120s solo because of `_run(coro)` opening fresh event loops per call — pre-existing slow path, **NOT touched**; full-file run completes normally.
+
+**Files touched (verbatim `git status --short` after dispatch):**
+```
+ M backend/routers/tasks.py
+ M backend/tests/conftest.py
+ M frontend/src/components/tasks/TaskDrawer.jsx
+ M frontend/src/pages/SetPasswordRequired.jsx
+?? backend/tests/test_bug27_email_reply_plumbing.py
+?? backend/tests/test_set_password_tooltip.py
+?? /tmp/bug27_fe_trace.py
+?? /tmp/item3_tooltip_trace.py
+```
+
+**Production env actions:** none required. No new env vars. P1-B's preview `COHORT_EMAILS_ENABLED=true` stays as-is.
+
+**Memos:** `memory/sprints/bug27_p4_rot_tooltip_combined.md`. `memory/auth_testing.md` §14 (bug 27) + §15 (tooltip) + §16 (P4 rot).
+
+**Resume contract:** Pause for e1_tester re-verification before the next phase. Next: "Questions for you" page work (per your earlier directive — this becomes the next dispatch after this trio is verified clean).
+
+
 ### C1-revised Phase A + Phase B — First-Login Password Set & Contribution Magic Link Codes ✅ SHIPPED (2026-02)
 
 **Combined P0 dispatch.** User-chosen autonomous decision (c) + (ii) — ship both phases back-to-back with one combined memo and suite-size delta.
