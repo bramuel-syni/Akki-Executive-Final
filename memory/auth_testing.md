@@ -622,6 +622,143 @@ r = requests.post(
 print(r.status_code, r.json()["question"]["id"])
 ```
 
+### ⚠️ Active-context mechanism — required setup before driving the Q4Y UI
+
+**Ground-truth (cited):**
+- Storage: `sessionStorage` key `akki_active_context_id` (PER-TAB,
+  not localStorage, not a cookie, not a server-side session field).
+  Defined at `frontend/src/lib/api.js:80` as
+  `ACTIVE_CONTEXT_STORAGE_KEY`.
+- Read on mount: `frontend/src/contexts/AuthContext.jsx:45`
+  initialises `activeContextId` via `readActiveContextId()`
+  (`frontend/src/lib/api.js:82-87`).
+- Injected on every authenticated API call:
+  `frontend/src/lib/api.js:203-206` adds
+  `X-Active-Context: <id>` header from the axios interceptor.
+- The server-side `POST /api/me/active-context` writes an audit
+  row but does NOT mutate the FE's active context — sessionStorage
+  is the single source of truth for the SPA. So a Playwright trace
+  CAN drive the active context end-to-end by setting the
+  sessionStorage key directly; no server round-trip required.
+
+**No new harness endpoint added** — the mechanism is a single
+sessionStorage key, so per the Honesty Protocol we document the
+direct manipulation instead of inventing work.
+
+**Why headless tests miss the seeded question without this setup:**
+the SPA defaults `activeContextId = null` post-login (AuthContext
+intentionally leaves it null so AppHome can render the context
+switcher). Any `/api/me/questions` call without a chosen context
+ends up returning rows ONLY where the assignee == the logged-in
+account AND the row is scoped to the user's default_context_id —
+which for the headless `e1_tester` admin is often a different
+context from the freshly-seeded question.
+
+**Playwright recipe (3 steps):**
+
+```python
+# 1. Seed the question and capture its context_id.
+resp = requests.post(
+    f"{API_URL}/api/admin/qa/seed/question",
+    headers={"Authorization": f"Bearer {TOKEN}", "X-CSRF-Token": CSRF},
+    json={"text": "Q4Y UI smoke", "asker_role": "board"},
+).json()
+qid = resp["question"]["id"]
+ctx_id = resp["question"]["context_id"]   # <-- already in the seed response
+
+# 2. After Playwright signs in, BEFORE navigating to /app/questions,
+#    inject the sessionStorage key.  Two equivalent paths:
+
+# Option A — `addInitScript` (runs on EVERY new document load,
+# including the post-login redirect):
+await context.add_init_script(
+    f"() => sessionStorage.setItem('akki_active_context_id', {ctx_id!r})"
+)
+
+# Option B — set after the first navigation completes, then
+# explicitly reload so the AuthContext re-bootstraps:
+await page.evaluate(
+    f"() => sessionStorage.setItem('akki_active_context_id', {ctx_id!r})"
+)
+await page.reload(wait_until="networkidle")
+
+# 3. Now navigate. AuthContext picks up the sessionStorage value,
+#    the axios interceptor sends X-Active-Context, and
+#    /api/me/questions returns the seeded row in the right scope.
+await page.goto(f"{BASE}/app/questions")
+```
+
+**Recommended:** Option A. The `addInitScript` path is cleaner
+because it runs before the SPA boots so AuthContext reads the
+correct value on its first render — no reload needed.
+
+**Cleanup:** the seed row carries the internal marker `_qa_seed:
+true` on the Mongo document. To purge after a test:
+
+```python
+# Direct cleanup if you have Mongo access:
+await db.cycle_questions.delete_many({"id": qid})
+
+# Or fall back to the marker if a batch cleanup is required:
+await db.cycle_questions.delete_many({"_qa_seed": True})
+```
+
+### ⚠️ KNOWN PRE-EXISTING BLOCKER — `Questions.jsx:456` doubled `/api/api/`
+
+**This is NOT a harness gap.** The harness mechanism above is
+verified working (`/tmp/q4y_harness_verify.py` → 4 viewports × 3
+steps PASS = 12/12). The seeded row IS reachable from the SPA's
+own cookie/bearer context via `fetch("/api/me/questions?q=...")`
+returning HTTP 200 with the row.
+
+**The blocker:** `frontend/src/pages/Questions.jsx:456` calls
+`api.get("/api/me/questions", ...)`. The axios client `api` has
+`baseURL = "/api"`. Axios prepends baseURL to any non-absolute
+URL, so the SPA's actual network request is for
+`/api/api/me/questions?...` which returns **404**. The page's
+`catch` block at `Questions.jsx:481-483` swallows the error,
+calls `setItems([])` + `setTotal(0)`, and renders the empty
+state.
+
+**Cited evidence (Playwright network log):**
+```
+GET /api/me/questions      → 200 (probe via raw fetch — works)
+GET /api/api/me/questions  → 404 (SPA's actual call — broken)
+```
+
+**Pre-existing.** `git blame frontend/src/pages/Questions.jsx -L 456`
+shows commit `c0feb679` from 2026-05-12 (Patch 14 — the page's
+original implementation). Predates the entire Q4Y P0+P1 dispatch,
+this fork, and this harness sub-dispatch.
+
+**Implications for e1_tester:**
+The 4 UI sub-checks that flagged `HUMAN_REQUIRED` will REMAIN
+blocked even after applying the documented sessionStorage prime —
+the page literally cannot render any question row because of the
+doubled-`/api` bug. The harness-only contract for THIS dispatch
+forbids any Q4Y FE code change, so the tester should re-run the
+**API-layer** sub-checks (which already passed 7/7 last time) and
+treat the 4 UI sub-checks as `BLOCKED_BY_PRE_EXISTING_BUG` pending
+a separate Q4Y FE fix dispatch.
+
+**Minimal fix (FOR A LATER DISPATCH — not this one):**
+Change `Questions.jsx:456` from
+```jsx
+const r = await api.get("/api/me/questions", { params: {...} });
+```
+to
+```jsx
+const r = await api.get("/me/questions", { params: {...} });
+```
+(strip the redundant `/api/` prefix — the axios `baseURL` adds
+it). Every other api.get() call in the codebase uses the bare
+path; this line is the only outlier. Estimated impact: 1 line +
+regression of the existing 34 Q4Y backend tests + a Playwright
+trace that asserts the row renders. Surface, get approval, then
+ship as a sibling to this dispatch.
+
+
+
 ### Q4Y wire surfaces (cite these in any future bug repro)
 - List endpoint: `GET /api/me/questions?status=…&sort=…&q=…&asker_role=…&page=…`
 - Cycle-scoped list: `GET /api/contexts/{cid}/cycles/{cid}/questions?status=…&sort=…&asker_role=…`

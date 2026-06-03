@@ -1,6 +1,55 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Q4Y harness sub-dispatch — Block 1+3 done · KNOWN BLOCKER surfaced (2026-02 fork-resume)
+
+**Harness-only dispatch.** Per your scope: Block 1 (READ-ONLY active-context doc) + Block 3 (confirm seed completeness). No new endpoint added — the mechanism is one sessionStorage key (per Honesty Protocol: do not invent work).
+
+**Block 1 result — cited ground-truth:**
+- Storage: `sessionStorage` key `akki_active_context_id`. Defined at `frontend/src/lib/api.js:80`.
+- Read on mount: `AuthContext.jsx:45` (useState init callback).
+- Wire injection: axios interceptor at `api.js:203-206` adds `X-Active-Context` header.
+- `POST /api/me/active-context` writes an audit row but does NOT mutate SPA state — sessionStorage is single source of truth.
+- **Recipe documented** in `auth_testing.md` §17: `add_init_script("sessionStorage.setItem('akki_active_context_id', <ctx_id>)")` runs BEFORE SPA JS so AuthContext reads it on first render — no reload needed.
+
+**Block 3 result:** `POST /api/admin/qa/seed/question` already returns full row with `context_id` at top-level. No change needed.
+
+**Harness verification trace:** `/tmp/q4y_harness_verify.py` — 4 viewports × 3 steps = **12/12 PASS** (signed in · sessionStorage primed · seed reachable via SPA-cookies fetch returning HTTP 200 with the row).
+
+**⚠️ KNOWN BLOCKER (pre-existing, surfaced per No-Silent-Deviations):**
+While verifying end-to-end, discovered that the SPA's `Questions.jsx:456` makes an axios call to `/api/me/questions` while the axios client has `baseURL = "/api"`. Net result: the SPA fetches `/api/api/me/questions` (doubled prefix) → HTTP 404. The page's catch block swallows it and renders empty state. **This is why the tester's 4 UI sub-checks were HUMAN_REQUIRED — not a tester limitation, not a harness gap.**
+
+Cited evidence (verbatim Playwright network log):
+```
+SPA actual:  GET /api/api/me/questions  → 404
+Raw fetch:   GET /api/me/questions      → 200 {total:1, items:[...]}
+```
+
+Blame: `c0feb6790` (2026-05-12, Patch 14 — predates the entire fork). Single-line outlier — every other api.get() call in the codebase uses the bare-path form. **NOT touched** per your "harness-only" constraint. **1-line fix surfaced for a follow-on dispatch** in the memo.
+
+**Two clean options awaiting your steer:**
+- (A) Ship the 1-line FE fix as a sibling sub-dispatch (~30 mins; unblocks the 4 UI sub-checks)
+- (B) Defer; mark the 4 UI sub-checks as `BLOCKED_BY_PRE_EXISTING_BUG` (API contracts proven 7/7)
+
+**Discipline gates (verbatim):**
+- Solva v1 byte-identical guard: `4 passed`.
+- Voice-lint: `clean across customer-copy surfaces`.
+- Broad bundle: **`187 passed`** (unchanged — harness-only).
+
+**Files touched:**
+```
+M memory/auth_testing.md          # §17 expanded with recipe + KNOWN BLOCKER section
+?? memory/sprints/q4y_harness_block1.md
+?? /tmp/q4y_harness_verify.py
+```
+
+Zero Q4Y code changes. Zero new endpoints. Zero new env vars.
+
+**Memo:** `memory/sprints/q4y_harness_block1.md`.
+
+**Resume contract:** Awaiting your decision on options A vs B. Pause for tester re-run on the 4 UI sub-checks until that's decided.
+
+
 ### Q4Y P0+P1 combined dispatch — Questions surface ✅ SHIPPED (2026-02 fork-resume)
 
 **Six items in one dispatch, all on the same Questions surface.** Approved scope: all P0 + P1 from the prior gap-analysis dispatch. Bundling avoids a half-shipped UI.
