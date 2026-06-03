@@ -227,6 +227,21 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.16em;
+}
+
+/* Track B Phase 1 Fig 7 (2026-06-03): descope `.akki-overline`'s color
+ * to non-button elements. Audit (frontend/src, 248 consumers): 241 are
+ * on <p>/<h3>/<span>/<div>/<label> — those keep oxblood. The 7 button
+ * consumers ALL already supply an explicit Tailwind `text-*` utility
+ * which the class color was silently overriding (it's defined after
+ * Tailwind in the cascade and ties on specificity, so .akki-overline
+ * was winning). The most visible victim was the FirstSession Begin
+ * button disabled state — text-white on bg-[var(--accent)]/70
+ * composed to rgb(122,46,46) on both fg+bg → 1:1 contrast → invisible.
+ * This rule lets the developer-intended text-* utility take effect on
+ * buttons while keeping the typography (font/size/weight/uppercase/
+ * letter-spacing) intact. */
+.akki-overline:not(button) {
   color: var(--oxblood);
 }
 

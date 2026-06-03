@@ -89,7 +89,7 @@ Status legend:
 - Calendar edit modal literal `SELECTED — COMMITS ON SAVE CHANGES` placeholder leakage (Fig 32) → ❌ OPEN
 
 ### C8 · UI / copy polish (P2)
-- "Begin" button text invisible (Fig 7) → ❌ OPEN
+- "Begin" button text invisible (Fig 7) → 🟡 PARTIAL — v2 root-cause fix shipped 2026-06-03T21:09:00Z (`.akki-overline` descoped from buttons in `index.css`; v1 disabled-bg-opacity fix retained). Live-DOM trace verified: text rgb(255,255,255) on bg rgb(122,46,46), per-channel delta 209 (was 0). Awaiting tester re-verification before flip to ✅.
 - Generic salutation "there" instead of first name (Fig 8) → ✅ SHIPPED (Cleanup Task B)
 - Hidden black callout under Help (Fig 8) → ✅ SHIPPED (Cleanup Task C)
 
@@ -103,13 +103,13 @@ Status legend:
 ## Section 4 — Two Tracks Status
 
 ### Track A — Analyze Journal redesign
-- Phase 1 (Foundation): Backend Analysis entity + multi-file upload + 250MB + session-close excel deletion + .xlsx/.docx exports → ❌ NOT STARTED (Intent Pre-Read pending user approval)
+- Phase 1 (Foundation): Backend Analysis entity + multi-file upload + 250MB + session-close excel deletion + .xlsx/.docx exports → ✅ SHIPPED 2026-06-03 — tester-verified end-to-end (multi-file `ana-*` Analysis → xlsx 7301B / docx 37132B / pptx 37560B; cross-tenant guard intact). Memos: `sprints/TRACK_A_PHASE1_AND_TRACK_B_PHASE1_combined.md`, `sprints/TRACK_A_PHASE1_R3_BLOCKER_FIX.md`.
 - Phase 2 (Chrome): Drawer mirroring Documents pattern + Analyze Journal listing + chat/objective input → ❌ NOT STARTED
 - Phase 3 (Synthesis): Solva v2 narration + Bottom Line + drill-down tabs (What changed / What's likely next / What's odd / Sources / Export). Bug #30 folded here. → ❌ NOT STARTED
 - Phase 4 (Multi-workbook + Versioning): Cross-file observation synthesis + refresh-creates-new-version + notes history → ❌ NOT STARTED
 
 ### Track B — QA cleanup
-- Phase B1 (small mechanical): C2 Sign-in landing + C2 Post-redirect error + C8 "Begin" button invisible → ❌ NOT STARTED
+- Phase B1 (small mechanical): C2 Sign-in landing + C2 Post-redirect error + C8 "Begin" button invisible → 🟡 PARTIAL — C8 Fig 7 v2 root-cause fix shipped 2026-06-03T21:09:00Z (`.akki-overline` descoped from `<button>` in `index.css`); live-DOM trace verified white-on-oxblood delta=209. Figs 20 + 22 still BLOCKED_NEED_SCREENSHOT. Memo: `sprints/TRACK_B_PHASE1_FIG7_V2_ROOT_CAUSE_FIX.md`.
 - Phase B2 (large): C5 Task Manager lifecycle (Commission + Closure + Tab badges + View more) → ❌ NOT STARTED
 - Phase B3 (feature wiring): C6 Questions Share + response association + reopening + history + related-doc-in-drawer → ❌ NOT STARTED
 - Phase B4 (cross-feature): C4 doc-extracted Questions surface + Open questions tile count → ❌ NOT STARTED
@@ -135,7 +135,7 @@ None. Awaiting tester journey-completion verification (R3) for Track A Phase 1 +
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-03T20:04:22Z (initial); updated 2026-06-03T20:43:17Z (Track A+B Phase 1 close); updated 2026-06-03T20:58:11Z (Track A Phase 1 R3 BLOCKER surgical fix — export dispatch on `ana-*` ids; admin first-session state reset to terminal)
-- **Agent:** discipline-step-1 (initial); track-a-track-b-phase1 (first close); track-a-r3-blocker-fix (this update)
-- **Mode:** product-code edits strictly within approved Pre-Read scope + the R3 surgical-fix dispatch. Track A Phase 1 stays 🟡 PARTIAL — flip to ✅ is the tester's call, not the agent's.
-- **File-creation scope:** see `sprints/TRACK_A_PHASE1_R3_BLOCKER_FIX.md` §1.
+- **Written:** 2026-06-03T20:04:22Z (initial); 2026-06-03T20:43:17Z (Track A+B Phase 1 close); 2026-06-03T20:58:11Z (Track A Phase 1 R3 BLOCKER surgical fix); 2026-06-03T21:09:00Z (Track A Phase 1 ✅ tester-verified; Track B Phase 1 Fig 7 v2 root-cause fix shipped, awaiting tester re-verification)
+- **Agent:** discipline-step-1 → track-a-track-b-phase1 → track-a-r3-blocker-fix → fig7-v2-root-cause-fix (this update)
+- **Mode:** Track A Phase 1 flipped to ✅ per tester verdict. Track B Phase 1 Fig 7 stays 🟡 PARTIAL — flip to ✅ is the tester's call.
+- **File-creation scope:** see `sprints/TRACK_B_PHASE1_FIG7_V2_ROOT_CAUSE_FIX.md` §1.

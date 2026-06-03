@@ -40,25 +40,57 @@ FRONTEND = REPO / "frontend" / "src"
 
 
 def test_fig7_first_session_begin_button_no_low_contrast_disabled():
-    """The previously-shipped disabled state combined `text-white` with
-    `bg-[var(--accent)]/40` — white on 40%-opacity-accent over a cream
-    background is the contrast failure mode. The fix bumps the disabled
-    state's bg-opacity to /70. Lockdown asserts the regression cannot
-    silently re-land."""
+    """v1 of the fix bumped disabled bg-opacity /40 → /70. v2 root-cause
+    fix descopes `.akki-overline`'s color from `<button>` elements in
+    index.css. Both layers must stay present so a regression on either
+    layer trips this lockdown."""
     page = (FRONTEND / "pages" / "FirstSession.jsx").read_text(encoding="utf-8")
-    # The bad combination must no longer appear.
+    # The original bad combination must remain absent.
     assert "bg-[var(--accent)]/40 cursor-not-allowed" not in page, (
         "FirstSession.jsx still uses bg-[var(--accent)]/40 on the disabled "
-        "Begin button — that was the C8/Fig 7 root cause and has been logged "
-        "as a regression."
+        "Begin button — Fig 7 v1 regression."
     )
-    # The fix shape must remain present.
+    # v1 fix shape must remain present.
     assert "bg-[var(--accent)]/70 cursor-not-allowed" in page, (
-        "FirstSession.jsx is missing the /70 disabled background — Fig 7 fix "
-        "was removed or refactored away."
+        "FirstSession.jsx is missing the /70 disabled background — Fig 7 v1 "
+        "fix was removed or refactored away."
     )
     # The button still says BEGIN.
     assert "BEGIN →" in page
+
+
+def test_fig7_root_cause_akki_overline_descoped_from_buttons():
+    """v2 root-cause fix. `.akki-overline` no longer sets `color:` at the
+    base selector — that color was silently winning over every explicit
+    Tailwind `text-*` utility on `<button>` consumers. The fix moves
+    `color: var(--oxblood)` to `.akki-overline:not(button)` so buttons
+    keep their developer-intended text-color. Lockdown asserts both the
+    de-scope AND that the typography rule still sets the other props
+    (font/size/weight/uppercase/letter-spacing)."""
+    css = (FRONTEND / "index.css").read_text(encoding="utf-8")
+    # The :not(button) scope MUST be present (the v2 fix shape).
+    assert ".akki-overline:not(button)" in css, (
+        "index.css missing the `.akki-overline:not(button)` rule — v2 "
+        "root-cause fix has regressed; <button> consumers will silently lose "
+        "their explicit Tailwind text-* utility to the oxblood override."
+    )
+    # The base rule MUST NOT set `color:` (otherwise the de-scope is no-op).
+    base_block_start = css.index(".akki-overline {")
+    base_block_end = css.index("}", base_block_start)
+    base_block = css[base_block_start:base_block_end]
+    assert "color:" not in base_block, (
+        "index.css `.akki-overline {…}` base block re-introduced a `color:` "
+        "declaration — that would override every <button>'s Tailwind text-* "
+        "again. Move it back to `.akki-overline:not(button)`."
+    )
+    # The typography props MUST remain on the base block (so all consumers
+    # — buttons and non-buttons — still get the uppercase/letter-spacing).
+    for prop in ("font-family", "font-size", "font-weight",
+                 "text-transform", "letter-spacing"):
+        assert prop in base_block, (
+            f"index.css `.akki-overline` base block missing `{prop}` — "
+            f"typography regression."
+        )
 
 
 def test_fig7_begin_button_keeps_data_testid_for_playwright():
@@ -110,6 +142,51 @@ def test_p0_b_card_2_documents_upload_route_still_present():
         "FirstSession.jsx no longer references /app/documents — P0-B Card 2 "
         "has regressed."
     )
+
+
+# ─── Live-DOM lockdown (R3 — journey, not surface-render) ──────────
+
+
+_FIG7_TRACE = Path("/tmp/track_b_phase1_fig7_v2_trace.py")
+
+
+@pytest.mark.skipif(
+    not _FIG7_TRACE.exists(),
+    reason=(
+        "Fig 7 live-DOM trace script missing at /tmp/. Run the v2 "
+        "scaffold step or set PREVIEW_URL to skip the trace."
+    ),
+)
+def test_fig7_live_dom_text_color_not_equal_bg_color():
+    """Live-DOM lockdown. Drives a real Chromium against the preview,
+    seeds `viewer@akki.ai` into `first_session.current_step=intake`,
+    navigates to the FirstSession intake, and asserts that the
+    rendered computed `color` differs materially from the rendered
+    computed `background-color` on the Begin button — both in
+    disabled and active state. Source-text tests catch class-name
+    regressions but the original bug was a CSS-cascade override
+    (`.akki-overline { color: var(--oxblood) }` winning over
+    `text-white`) which source-text cannot see. THIS test is the
+    one that would have caught the v1-fix gap."""
+    import subprocess
+
+    result = subprocess.run(
+        ["python3", str(_FIG7_TRACE)],
+        capture_output=True, text=True, timeout=180,
+    )
+    # Surface the verbatim trace output so the assertion message
+    # carries enough evidence to debug a re-regression.
+    output = (result.stdout or "") + "\n" + (result.stderr or "")
+    assert result.returncode == 0, (
+        f"Fig 7 live-DOM trace FAILED (exit={result.returncode}).\n"
+        f"--- trace output ---\n{output}\n"
+    )
+    # Sanity: the trace must report both colours and the PASS line.
+    assert "[disabled] text-color:" in output
+    assert "[disabled] background-color:" in output
+    assert "[Fig 7 v2] PASS" in output, output
+
+
 
 
 # ─── BLOCKED items — explicit fail-fast so they cannot be silently skipped ─
