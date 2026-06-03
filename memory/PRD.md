@@ -1,6 +1,30 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Production state reconciliation (2026-02 fork-resume — post-Q4Y-FIX deploy)
+
+**Corrected per user evidence.** Production at `https://akki.syni.ai` IS on the new build — e1_tester verified the deployed JS bundle uses single `/api/` prefix; live `GET /api/me/questions` returns 200; openapi.json includes `mark-answered`, `admin/qa/seed/question`, `admin/qa/first-session/reset`, and `briefings/generate`. The `GET /api/api/me/questions 404` log lines refer to pre-deploy traffic replay or cached/stale browser bundles — NOT live failures. **No re-deploy needed.**
+
+**Bug-fix roadmap CLOSED.** P0 + P1 + Q4Y + harness + Q4Y-FIX all shipped, all verified in production. Memo locked in `memory/sprints/q4y_fix.md` with the production-verification paragraph.
+
+**Cosmetic backlog item logged (NOT fixed):** Five FastAPI duplicate-Operation-ID warnings in `chat_audit_panel.py` (4×) + `documents.py::download_document`. Cosmetic OpenAPI schema noise; every route still mounts cleanly. Parked in `memory/sprints/backlog_openapi_duplicate_op_ids.md` per the user's explicit "Do NOT fix now (scope creep)" directive.
+
+**Remaining open items are 100% user-side blockers** — no further agent code work pending until you act on at least one of:
+- 🟡 SendGrid Inbound Parse webhook URL (with Basic Auth) → SendGrid console
+- 🟡 `COHORT_EMAILS_ENABLED=true` in production env (preview already set)
+- 🟡 Postmark boot-guard decision
+- 🟢 Google GCP creds for P5.18 OAuth migration
+
+Files touched this dispatch:
+```
+M memory/PRD.md
+M memory/sprints/q4y_fix.md           # production-verification paragraph appended
+?? memory/sprints/backlog_openapi_duplicate_op_ids.md
+```
+
+Zero code changes. Read + memo only.
+
+
 ### Q4Y-FIX sibling sub-dispatch — `/api/api/me/questions` typo repair ✅ SHIPPED (2026-02 fork-resume)
 
 **Per your Option A decision.** One-line product fix; closes the pre-existing blocker the harness sub-dispatch surfaced.

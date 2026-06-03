@@ -151,6 +151,25 @@ Plus the docs refresh below.
 
 ---
 
+## Production verification (2026-02 fork-resume — post-Q4Y-FIX deploy)
+
+**Verified by e1_tester against `https://akki.syni.ai`.** The
+deployed JS bundle uses the single `/api/` prefix on the
+`/me/questions` caller — no `/api/api/` substring exists anywhere
+in the production bundle. Live network call
+`GET /api/me/questions` returns HTTP 200. The deployed
+`openapi.json` includes the new `mark-answered`,
+`admin/qa/seed/question`, `admin/qa/first-session/reset`, and
+`briefings/generate` operations. Any residual
+`GET /api/api/me/questions 404` lines observed in production logs
+refer to pre-deploy traffic replay or cached/stale browser bundles
+that have not yet refreshed; they are NOT live failures and will
+not reappear once any cached client reloads. **No re-deploy
+needed.** The user's earlier "I deployed" is confirmed real;
+production is on the new build.
+
+---
+
 ## Closes
 
 - 4 UI sub-checks previously flagged `HUMAN_REQUIRED` by the
