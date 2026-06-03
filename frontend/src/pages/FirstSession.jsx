@@ -185,10 +185,10 @@ function FirstSessionIntake({ initial, onSubmitted, onSkip }) {
           type="button"
           disabled={!ready || saving}
           onClick={submit}
-          className={`akki-overline tracking-[0.16em] text-[11px] px-5 py-3 text-white transition-colors ${
+          className={`akki-overline tracking-[0.16em] text-[11px] px-5 py-3 text-white bg-[var(--accent)] transition-colors ${
             ready && !saving
-              ? "bg-[var(--accent)] hover:bg-[var(--accent)]/90"
-              : "bg-[var(--accent)]/40 cursor-not-allowed"
+              ? "hover:bg-[var(--accent)]/90"
+              : "bg-[var(--accent)]/70 cursor-not-allowed"
           }`}
           data-testid="first-session-intake-submit"
         >

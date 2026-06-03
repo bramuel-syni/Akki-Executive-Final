@@ -48,7 +48,9 @@ from services.workbook_analyzer import (
     WorkbookCitation,
     WorkbookCitationResolver,
     WorkbookSheet,
+    build_docx_report,
     build_pptx_report,
+    build_xlsx_report,
     detect_anomalies,
     extract_signals_for,
     parse_workbook,
@@ -57,14 +59,23 @@ from services.workbook_analyzer import (
     validate_no_imperatives,
 )
 
+# Track A Phase 1 (2026-06-03) — new sibling Analysis entity + service.
+from models.analysis import Analysis  # noqa: F401  re-export available for callers
+from services.analysis_lifecycle import (
+    build_analysis_from_uploads,
+    session_close as analysis_session_close,
+)
+
 
 router = APIRouter(prefix="/api/workbook", tags=["workbook-analyze"])
 
 
-# 25 MB cap. Smaller than the documents pipeline because workbooks
-# parse into memory and we want to keep the per-tenant Mongo
-# footprint bounded.
-MAX_BYTES = 25 * 1024 * 1024
+# Track A Phase 1 (2026-06-03) — file-size cap raised from 25MB →
+# 250MB per file per the approved Pre-Read. The Analyze pipeline now
+# routinely sees workbooks in the 100MB+ range from real exec-side
+# users; 25MB was a P5.14-era conservative ceiling. The 250MB
+# boundary still bounds the per-tenant Mongo footprint.
+MAX_BYTES = 250 * 1024 * 1024
 ACCEPT_EXT = {".xlsx", ".csv"}
 
 
@@ -132,7 +143,7 @@ async def upload_workbook(
         raise HTTPException(415, f"workbook_format_unsupported: {ext}")
     data = await file.read()
     if len(data) > MAX_BYTES:
-        raise HTTPException(413, "workbook_too_large_25mb")
+        raise HTTPException(413, "workbook_too_large_250mb")
     if not data:
         raise HTTPException(400, "workbook_empty")
 
@@ -469,6 +480,162 @@ async def report_endpoint(aid: str, current: Dict[str, Any] = Depends(get_curren
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers=headers,
     )
+
+
+# ─────────────────────────────────────────────────────────────────
+# GET /analyses/{aid}/report.docx           (Track A Phase 1)
+# GET /analyses/{aid}/report.xlsx           (Track A Phase 1)
+#
+# Mirror the PPTX endpoint pattern byte-for-byte: same tenant-scope
+# (`_load_analysis(aid, current["id"])` → 404 on miss-or-other-
+# tenant), same Cache-Control, same Content-Disposition format,
+# same RefuseToDecideViolation → 500 handling.
+# ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/analyses/{aid}/report.docx")
+async def report_docx_endpoint(aid: str, current: Dict[str, Any] = Depends(get_current_account)):
+    analysis = await _load_analysis(aid, current["id"])
+    try:
+        docx_bytes = build_docx_report(analysis)
+    except RefuseToDecideViolation as e:
+        raise HTTPException(500, f"narration_failed_refuse_to_decide: {e}")
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", analysis.filename)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{safe_name}_analysis.docx"',
+        "Cache-Control": "no-store",
+    }
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers,
+    )
+
+
+@router.get("/analyses/{aid}/report.xlsx")
+async def report_xlsx_endpoint(aid: str, current: Dict[str, Any] = Depends(get_current_account)):
+    analysis = await _load_analysis(aid, current["id"])
+    try:
+        xlsx_bytes = build_xlsx_report(analysis)
+    except RefuseToDecideViolation as e:
+        raise HTTPException(500, f"narration_failed_refuse_to_decide: {e}")
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", analysis.filename)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{safe_name}_analysis.xlsx"',
+        "Cache-Control": "no-store",
+    }
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
+# Track A Phase 1 (2026-06-03) — NEW `Analysis` entity endpoints.
+#
+# These sit alongside the P5.14 surface above; they DO NOT replace
+# it. Phase 2 of Track A wires the UI to these; Phase 1 establishes
+# the persistence shape + lifecycle hooks.
+#
+# Collection: `analyses` (vs P5.14 `workbook_analyses`).
+# Tenant scope: `(account_id, context_id)` — context_id REQUIRED.
+# ─────────────────────────────────────────────────────────────────
+
+
+@router.post("/upload-multi")
+async def upload_workbook_multi(
+    files: List[UploadFile] = File(..., description="One or more xlsx/csv files"),
+    title: Optional[str] = Form(None),
+    context_id: Optional[str] = Form(None),
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Multi-file upload → creates ONE `Analysis` row with N source
+    refs. Per Pre-Read: accepts 1+ files in one request; 250MB cap
+    PER FILE."""
+    if not files:
+        raise HTTPException(400, "at_least_one_file_required")
+
+    ctx = context_id or current.get("active_context_id")
+    if not ctx:
+        raise HTTPException(400, "context_id_required")
+
+    accepted: List[tuple] = []  # (filename, bytes, fmt)
+    for upload in files:
+        fname = upload.filename or "unnamed"
+        ext = "." + fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
+        if ext not in ACCEPT_EXT:
+            raise HTTPException(415, f"workbook_format_unsupported: {ext}")
+        raw = await upload.read()
+        if len(raw) > MAX_BYTES:
+            raise HTTPException(413, f"workbook_too_large_250mb: {fname}")
+        if not raw:
+            raise HTTPException(400, f"workbook_empty: {fname}")
+        fmt = "xlsx" if ext == ".xlsx" else "csv"
+        # Light-touch parse-validation: every source must be
+        # readable as the declared format.
+        try:
+            parse_workbook(blob=raw, file_format=fmt)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(422, f"workbook_parse_failed: {fname}: {e!s:.140}")
+        accepted.append((fname, raw, fmt))
+
+    display_title = (title or "").strip() or (
+        accepted[0][0] if len(accepted) == 1
+        else f"{accepted[0][0]} + {len(accepted) - 1} more"
+    )
+
+    analysis, blob_docs = build_analysis_from_uploads(
+        account_id=current["id"],
+        context_id=ctx,
+        title=display_title,
+        files=accepted,
+    )
+    await db.analyses.insert_one(analysis.model_dump())
+    if blob_docs:
+        await db.analysis_blobs.insert_many(blob_docs)
+
+    return {
+        "id": analysis.id,
+        "status": analysis.status,
+        "title": analysis.title,
+        "context_id": analysis.context_id,
+        "sources": [s.model_dump() for s in analysis.sources],
+    }
+
+
+@router.get("/v2/analyses/{aid}")
+async def get_analysis_v2(aid: str, current: Dict[str, Any] = Depends(get_current_account)):
+    """Read endpoint for the new `Analysis` entity. Tenant-scoped:
+    cross-tenant returns 404 (no existence leak)."""
+    row = await db.analyses.find_one(
+        {"id": aid, "account_id": current["id"]},
+        {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(404, "analysis_not_found")
+    return row
+
+
+@router.post("/v2/analyses/{aid}/session-close")
+async def session_close_endpoint(
+    aid: str, current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Delete the excel binary on session close; retain the
+    Analysis row + sources + (Phase 3) observations + notes."""
+    row = await db.analyses.find_one(
+        {"id": aid, "account_id": current["id"]},
+        {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(404, "analysis_not_found")
+    result = await analysis_session_close(
+        db,
+        analysis_id=aid,
+        account_id=current["id"],
+        context_id=row["context_id"],
+    )
+    return result
 
 
 __all__ = ["router"]

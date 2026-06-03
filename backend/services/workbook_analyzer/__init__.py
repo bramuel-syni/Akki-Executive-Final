@@ -43,7 +43,7 @@ from .forecaster import run_forecast
 from .anomaly_detector import detect_anomalies
 from .signal_extractor import extract_signals_for
 from .refuse_to_decide import validate_no_imperatives, RefuseToDecideViolation
-from .report_builder import build_pptx_report
+from .report_builder import build_pptx_report, build_docx_report, build_xlsx_report
 
 __all__ = [
     "WorkbookAnalysis",
@@ -65,4 +65,6 @@ __all__ = [
     "validate_no_imperatives",
     "RefuseToDecideViolation",
     "build_pptx_report",
+    "build_docx_report",
+    "build_xlsx_report",
 ]

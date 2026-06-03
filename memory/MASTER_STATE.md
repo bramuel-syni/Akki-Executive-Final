@@ -129,13 +129,13 @@ Status legend:
 
 ## Section 6 — Active Phase
 
-None. Awaiting user approval on Intent Pre-Reads for Track A Phase 1 and Track B Phase 1.
+None. Awaiting tester journey-completion verification (R3) for Track A Phase 1 + Track B Phase 1 (Fig 7), plus screenshots for Track B Figs 20 + 22.
 
 ---
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-03T20:04:22Z
-- **Agent:** discipline-step-1
-- **Mode:** read-only on /app/memory + matrix; ZERO product code touched; ZERO tests touched; ZERO env changes.
-- **File-creation scope:** this file only.
+- **Written:** 2026-06-03T20:04:22Z (initial); updated 2026-06-03T20:43:17Z (Track A+B Phase 1 close)
+- **Agent:** discipline-step-1 (initial); track-a-track-b-phase1 (this update)
+- **Mode:** read-only on /app/memory + matrix at initial write; product-code edits in second update strictly within approved Pre-Read scope.
+- **File-creation scope:** this file + new tracked artefacts listed in `sprints/TRACK_A_PHASE1_AND_TRACK_B_PHASE1_combined.md` §1.
