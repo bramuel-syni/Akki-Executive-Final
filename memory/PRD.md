@@ -1,6 +1,65 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Q4Y P0+P1 combined dispatch — Questions surface ✅ SHIPPED (2026-02 fork-resume)
+
+**Six items in one dispatch, all on the same Questions surface.** Approved scope: all P0 + P1 from the prior gap-analysis dispatch. Bundling avoids a half-shipped UI.
+
+**Spec grounding:** NO external Q4Y spec doc exists in `/app/memory/`. Dispatch + de facto contracts from Pulse (`lib/takeToSolva.js` + `solva_v2.py::fetch_take_to_solva_seed`) and DocumentDrawer/TaskDrawer (`chat.py::LinkedContextIn` + `_resolve_linked_context`) are the spec. Every wiring decision cites the reused pattern.
+
+**Items shipped:**
+- **P0-S1** — Wired the dead sort dropdown. New `_SORT_KEYS` map in `routers/questions.py` (`recent` · `oldest` · `answered_at_desc`). URL `?sort=` param syncs with `setParam` in `Questions.jsx`. Unknown keys → 400 (no silent fallback). Default `recent` stripped from URL.
+- **P0-C3** — New `POST /api/contexts/{cid}/questions/{qid}/mark-answered` endpoint. Optional `{note: str}`, idempotent (re-running on already-answered = 200 no-op, no new history row), tenant-scoped via `require_context_membership`, writes `history[]` row with `kind: "marked_answered"`, sets `status="answered"` + `answered_at` + `answered_by_account_id`. Does NOT set `answer_text` (Submit-Answer remains the only body-write path).
+- **P1-C1** — "Use in Solva" CTA. Extended `solva_v2.py::fetch_take_to_solva_seed` with `kind="question"` branch. Citation label format: `"Question · {first 60 chars}…"` (no ellipsis if shorter). Membership tenant guard via `db.memberships.find_one({status: "active"})`. Drawer CTA uses existing `takeToSolva({navigate, kind:"question", id})` helper — no new helper, no new Solva flow.
+- **P1-C2** — "Use in Chat" CTA. Extended `chat.py::LinkedContextIn._check_ctx_type` allow-list to include `question`. Added `question` branch to `_resolve_linked_context` returning `{ctx_type, ctx_id, title, excerpt, href}` (excerpt includes question body, answer-so-far if present, status + asker_role footer). Drawer CTA navigates to `/app/chat?ctx_type=question&ctx_id=...`. Cross-tenant guard via `(id, context_id)` find_one — wrong context returns None instead of leaking.
+- **P1-F3** — Server-side `q` text search on `/api/me/questions`. Uses `re.escape(q_text)` to defang regex metacharacters defensively (case-insensitive match). ≤120 chars to bound cost. Combines cleanly with `status` + `asker_role`. Cross-page hits surface (legacy bug — client-side filter only narrowed the already-returned page).
+- **P1-S2** — Covered by S1's `answered_at_desc` key (third sort option).
+
+**Hard constraints respected:**
+- No new entity types — `cycle_questions` schema unchanged.
+- No new chat/Solva flows — both CTAs reuse existing seed/allow-list paths.
+- No new env vars.
+- Manual pricing untouched.
+- Q4Y P2-F4 (assignee filter) deferred per scope.
+
+**Lockdown tests:** 5 new files, **34 new tests** (7 + 7 + 6 + 8 + 6). 5 explicit `negative-leak` cross-tenant guards. All PASS.
+
+**Discipline gates (verbatim):**
+- Solva v1 byte-identical guard: `4 passed, 15 warnings in 3.26s`.
+- Voice-lint: `voice_lint: clean across customer-copy surfaces.`
+- Broad bundle (22 files): **`187 passed, 22 warnings in 524.32s (0:08:44)`**.
+- Suite-size delta: **+34 net new**. 153 → 187.
+
+**No silent deviations:**
+1. Initial code used `db.context_memberships` (inferred); fixed to `db.memberships` with `status: "active"` (canonical convention from `core.py::require_context_membership` + `routers/events.py:84` + `routers/admin_qa_hooks.py::admin_qa_seed_recent_doc`) BEFORE any tests ran.
+2. Initial test imports referenced `_seed_from_context`; actual function is `_resolve_linked_context` (chat.py:309). Fixed.
+3. `_qa_seed: true` harness marker was leaking on the wire — added `_strip()` filter so it never reaches clients.
+
+**Harness added:** `POST /api/admin/qa/seed/question` (super-admin gated). Documented in `auth_testing.md` §17.
+
+**Files touched (verbatim `git status --short`):**
+```
+ M backend/routers/admin_qa_hooks.py
+ M backend/routers/chat.py
+ M backend/routers/questions.py
+ M backend/routers/solva_v2.py
+ M frontend/src/pages/Questions.jsx
+ M memory/auth_testing.md · memory/test_credentials.md · memory/PRD.md
+?? backend/tests/test_q4y_p0_s1_sort_wiring.py
+?? backend/tests/test_q4y_p0_c3_mark_answered.py
+?? backend/tests/test_q4y_p1_c1_use_in_solva.py
+?? backend/tests/test_q4y_p1_c2_use_in_chat.py
+?? backend/tests/test_q4y_p1_f3_server_search.py
+?? memory/sprints/q4y_combined_p0_p1.md
+```
+
+**Production env actions:** none required.
+
+**Memo:** `memory/sprints/q4y_combined_p0_p1.md`.
+
+**Resume contract:** Pause for e1_tester re-verification.
+
+
 ### Bug 27 / Fig 42 + P4 rot fix + Tooltip on /auth/set-password ✅ SHIPPED (2026-02 fork-resume)
 
 **Focused trio dispatch — one combined memo.** User instructed: bug 27 as primary, P4 rot 2-line fix, tooltip on /auth/set-password heading. No scope creep.

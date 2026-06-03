@@ -27,8 +27,10 @@ import {
 } from "@/components/ui/sheet";
 import {
   MessageSquare, Plus, ArrowRight, Loader2, X as XIcon, CheckCircle2,
+  Zap, MessageCircle, Check,
 } from "lucide-react";
 import ListingShell from "@/components/common/ListingShell";
+import takeToSolva from "@/lib/takeToSolva";
 
 
 function relTime(iso) {
@@ -87,9 +89,10 @@ function QuestionRow({ row, onOpen }) {
 }
 
 
-function QuestionDrawer({ row, contextIdGetter, onClose, onAnswered }) {
+function QuestionDrawer({ row, contextIdGetter, onClose, onAnswered, navigate }) {
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
+  const [markBusy, setMarkBusy] = useState(false);
 
   useEffect(() => { setAnswer(""); }, [row?.id]);
 
@@ -116,6 +119,53 @@ function QuestionDrawer({ row, contextIdGetter, onClose, onAnswered }) {
     } catch (e) {
       toast.error(apiErrorMessage(e));
     } finally { setBusy(false); }
+  };
+
+  // Q4Y P0-C3 (2026-02 fork-resume) — "Mark as Answered" without
+  // composing a body. Idempotent on the backend. Reuses the same
+  // contextIdGetter the answer-submit path uses.
+  const markAnswered = async () => {
+    const cid = contextIdGetter ? contextIdGetter(row) : row.context_id;
+    if (!cid) {
+      toast.error("Missing context id for this question.");
+      return;
+    }
+    setMarkBusy(true);
+    try {
+      await api.post(
+        `/contexts/${cid}/questions/${row.id}/mark-answered`,
+        {},
+      );
+      toast.success("Marked answered.");
+      onAnswered && onAnswered();
+      onClose && onClose();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally { setMarkBusy(false); }
+  };
+
+  // Q4Y P1-C1 (2026-02 fork-resume) — "Use in Solva" CTA. Reuses
+  // the canonical Pulse pattern via `lib/takeToSolva.js` →
+  // `/app/solva/session/new?ctx_type=question&ctx_id={row.id}`.
+  // The backend resolver lives at
+  // `routers/solva_v2.py::fetch_take_to_solva_seed` (kind="question").
+  const useInSolva = () => {
+    onClose && onClose();
+    takeToSolva({ navigate, kind: "question", id: row.id });
+  };
+
+  // Q4Y P1-C2 (2026-02 fork-resume) — "Use in Chat" CTA. Mirrors
+  // the canonical DocumentDrawer/TaskDrawer pattern via
+  // `/app/chat?ctx_type=question&ctx_id={row.id}`. Backend allow-
+  // list extended at `routers/chat.py::LinkedContextIn`; seed shape
+  // handled in `_seed_from_context`.
+  const useInChat = () => {
+    onClose && onClose();
+    if (typeof navigate === "function") {
+      navigate(
+        `/app/chat?ctx_type=question&ctx_id=${encodeURIComponent(row.id)}`,
+      );
+    }
   };
 
   return (
@@ -182,6 +232,56 @@ function QuestionDrawer({ row, contextIdGetter, onClose, onAnswered }) {
               </div>
             </div>
           )}
+
+          {/* Q4Y P0-C3 + P1-C1 + P1-C2 (2026-02 fork-resume) —
+              Drawer CTA strip. Surfaces below the composer (or the
+              answer pane when isAnswered). Mark-answered hidden if
+              already answered. Use-in-Solva + Use-in-Chat available
+              both before and after answer so a re-investigation is
+              always one click away. */}
+          <div
+            className="border-t border-[var(--rule)] pt-4 flex flex-wrap gap-2"
+            data-testid="question-drawer-cta-strip"
+          >
+            {!isAnswered && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={markAnswered}
+                disabled={markBusy}
+                className="rounded-sm border-[var(--rule)] text-[12px]"
+                data-testid="question-drawer-mark-answered"
+              >
+                {markBusy
+                  ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  : <Check className="w-3.5 h-3.5 mr-1.5" />}
+                Mark as Answered
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={useInSolva}
+              className="rounded-sm border-[var(--rule)] text-[12px]"
+              data-testid="question-drawer-use-in-solva"
+            >
+              <Zap className="w-3.5 h-3.5 mr-1.5" />
+              Use in Solva
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={useInChat}
+              className="rounded-sm border-[var(--rule)] text-[12px]"
+              data-testid="question-drawer-use-in-chat"
+            >
+              <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
+              Use in Chat
+            </Button>
+          </div>
 
           {(row.history || []).length > 0 && (
             <div data-testid="question-drawer-history">
@@ -301,6 +401,11 @@ export default function Questions() {
 
   const filter = searchParams.get("filter") || "open";
   const q = searchParams.get("q") || "";
+  // Q4Y P0-S1 (2026-02 fork-resume) — sort key from URL. Defaults to
+  // "recent" (legacy `asked_at desc`). Other keys: `oldest`,
+  // `answered_at_desc`. Backend supports all three via
+  // `routers/questions.py::_SORT_KEYS`.
+  const sort = searchParams.get("sort") || "recent";
   // Phase I.6 (2026-05-27) — close-loop wire from CompanyHome Card 4
   // subtext segments: deep link `/app/questions?role=board|ceo|team`.
   const askerRole = searchParams.get("role") || "";
@@ -314,7 +419,14 @@ export default function Questions() {
 
   const setParam = (k, v) => {
     const sp = new URLSearchParams(searchParams);
-    if (!v || v === "open") sp.delete(k); else sp.set(k, v);
+    // Defaults stripped from the URL so the canonical share-link
+    // shape stays clean. `filter` defaults to "open"; `sort` to
+    // "recent". Other keys drop on empty value.
+    const isDefault = (
+      (k === "filter" && v === "open") ||
+      (k === "sort" && v === "recent")
+    );
+    if (!v || isDefault) sp.delete(k); else sp.set(k, v);
     setSearchParams(sp, { replace: true });
   };
 
@@ -334,6 +446,7 @@ export default function Questions() {
           {
             params: {
               status: filter === "all" ? "all" : filter,
+              sort,
               ...(askerRole ? { asker_role: askerRole } : {}),
             },
           },
@@ -344,6 +457,12 @@ export default function Questions() {
           params: {
             status: filter === "all" ? "all" : filter,
             page, page_size: 10,
+            sort,
+            // Q4Y P1-F3 (2026-02 fork-resume) — server-side text
+            // search. Pass `q` to the backend so cross-page hits
+            // surface; client-side filter below stays as a belt-
+            // and-suspenders narrowing of the already-narrow page.
+            ...(q ? { q } : {}),
             ...(askerRole ? { asker_role: askerRole } : {}),
           },
         });
@@ -360,7 +479,7 @@ export default function Questions() {
       setItems([]);
       setTotal(0);
     } finally { setLoading(false); }
-  }, [routeCycleId, activeContext?.id, filter, page, q, askerRole]);
+  }, [routeCycleId, activeContext?.id, filter, page, q, askerRole, sort]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -428,10 +547,12 @@ export default function Questions() {
           activeFilterKey={filter}
           onFilterChange={(k) => setParam("filter", k)}
           sortOptions={[
-            { key: "recent", label: "Most recent" },
-            { key: "oldest", label: "Oldest" },
+            { key: "recent",           label: "Most recent" },
+            { key: "oldest",           label: "Oldest" },
+            { key: "answered_at_desc", label: "Recently answered" },
           ]}
-          activeSortKey="recent"
+          activeSortKey={sort}
+          onSortChange={(k) => setParam("sort", k)}
           pageSize={10}
           page={page}
           totalCount={total}
@@ -495,6 +616,7 @@ export default function Questions() {
         contextIdGetter={contextIdGetter}
         onClose={() => setDrawerRow(null)}
         onAnswered={() => load()}
+        navigate={navigate}
       />
 
       {routeCycleId && activeContext?.id && (

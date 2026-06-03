@@ -252,3 +252,70 @@ async def seed_recent_doc(
         "created_context": created_context,
         "created_document": created_document,
     }
+
+
+
+# ─────────────────────────────────────────────────────────────────
+# Q4Y harness (2026-02 fork-resume) — Seed a `cycle_questions` row
+# so e1_tester can hit the Questions surface without going through
+# Solva. Super-admin gated like every other QA hook in this file.
+# ─────────────────────────────────────────────────────────────────
+class _SeedQuestionIn(BaseModel):
+    context_id: Optional[str] = Field(default=None, max_length=80)
+    cycle_id:   Optional[str] = Field(default=None, max_length=80)
+    assignee_account_id: Optional[str] = Field(default=None, max_length=80)
+    text: str = Field(min_length=3, max_length=2000)
+    asker_role: Optional[str] = Field(default=None, max_length=20)
+    status: Optional[str] = Field(default="open", max_length=20)
+
+
+@router.post("/seed/question")
+async def admin_qa_seed_question(
+    body: _SeedQuestionIn,
+    current: Dict[str, Any] = Depends(_require_super_admin_with_mfa),
+):
+    """Insert a single `cycle_questions` row for headless QA flows.
+
+    Defaults:
+      • assignee_account_id → the caller (the admin) if not provided.
+      • context_id          → the admin's `default_context_id` if not
+        provided. Fails 400 if the admin has no default context AND
+        no context_id was passed.
+      • cycle_id            → the empty string (Q4Y is cycle-scoped
+        but the /me/questions endpoint does not require it).
+      • asker_role          → "board".
+      • status              → "open".
+
+    Returns the freshly-inserted row stripped of `_id`. Idempotent
+    only at the test-fixture level (each call mints a fresh id).
+    """
+    assignee = body.assignee_account_id or current["id"]
+    ctx_id = body.context_id or current.get("default_context_id")
+    if not ctx_id:
+        raise HTTPException(
+            status_code=400,
+            detail="context_id is required (or set the admin's default_context_id).",
+        )
+    cycle_id = body.cycle_id or ""
+    asker_role = body.asker_role or "board"
+    status = body.status or "open"
+    if status not in ("open", "pending", "answered", "resolved"):
+        raise HTTPException(status_code=400, detail="Unknown status.")
+    now = datetime.now(timezone.utc).isoformat()
+    qid = uuid.uuid4().hex
+    row = {
+        "id":                  qid,
+        "context_id":          ctx_id,
+        "cycle_id":            cycle_id,
+        "assignee_account_id": assignee,
+        "asker_role":          asker_role,
+        "text":                body.text.strip(),
+        "status":              status,
+        "asked_at":            now,
+        "history":             [{"ts": now, "kind": "raised", "actor_id": current["id"]}],
+        "_qa_seed":            True,  # marker for headless cleanup
+    }
+    await db.cycle_questions.insert_one(dict(row))
+    row.pop("_qa_seed", None)
+    return {"ok": True, "question": row}
+

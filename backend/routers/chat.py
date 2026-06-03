@@ -175,7 +175,12 @@ class LinkedContextIn(BaseModel):
     @field_validator("ctx_type")
     @classmethod
     def _check_ctx_type(cls, v: str) -> str:
-        allowed = {"document", "cycle", "task", "work_studio", "work_studio_artefact"}
+        # Q4Y P1-C2 (2026-02 fork-resume) — `question` added to the
+        # allow-list so the Q4Y "Use in Chat" CTA can deep-link a
+        # Questions row into a fresh chat. Seed shape handled in
+        # `_resolve_linked_context` below.
+        allowed = {"document", "cycle", "task", "work_studio",
+                   "work_studio_artefact", "question"}
         if v not in allowed:
             raise ValueError(f"ctx_type must be one of {sorted(allowed)}")
         if v == "work_studio":
@@ -386,6 +391,44 @@ async def _resolve_linked_context(
             "title":    art.get("title") or art["id"],
             "excerpt":  (art.get("summary") or "")[:8000],
             "href":     f"/app/work-studio/artefact/{art['id']}",
+        }
+    # Q4Y P1-C2 (2026-02 fork-resume) — Question linked-context.
+    # `cycle_questions` rows are context-scoped via `context_id`;
+    # we look them up under the caller's active context so a
+    # tenant-A user cannot deep-link a tenant-B question into a chat
+    # via collision (the find_one returns None and the link drops).
+    # The excerpt is the question body plus the optional answer
+    # (so the model can see what was already written) and a one-
+    # line metadata footer.
+    if ctx_type == "question":
+        ques = await db.cycle_questions.find_one(
+            {"id": ctx_id, "context_id": context_id},
+            {"_id": 0, "id": 1, "text": 1, "answer_text": 1,
+             "status": 1, "asker_role": 1, "asked_at": 1},
+        )
+        if not ques:
+            return None
+        text = (ques.get("text") or "").strip()
+        ans = (ques.get("answer_text") or "").strip()
+        bits = []
+        if text:
+            bits.append(f"Question: {text}")
+        if ans:
+            bits.append(f"Answer so far: {ans}")
+        bits.append(
+            f"Status: {ques.get('status', 'open')}"
+            + (f" · asked by {ques['asker_role']}" if ques.get("asker_role") else "")
+        )
+        # Title — first 60 chars of the question text plus ellipsis.
+        snippet = text[:60].rstrip()
+        if len(text) > 60:
+            snippet += "…"
+        return {
+            "ctx_type": "question",
+            "ctx_id":   ques["id"],
+            "title":    snippet or "Question",
+            "excerpt":  "\n\n".join(bits)[:8000],
+            "href":     f"/app/questions?q={ques['id']}",
         }
     # Unknown ctx_type — silently miss. The schema validator should
     # already have rejected it; defensive return for any future

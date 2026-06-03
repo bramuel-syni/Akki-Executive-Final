@@ -8,7 +8,8 @@ table) — read both.
 Last updated: 2026-02 — Phase P0-B / P0-C / Test-harness hooks /
 C1-revised Phase A (First-login password set) + Phase B
 (Contribution magic-link error codes) / Bug 27 (Email Reply mode
-plumbing) + tooltip on /auth/set-password.
+plumbing) + tooltip on /auth/set-password / Q4Y P0+P1 (sort,
+mark-answered, Use in Solva, Use in Chat, server-side q search).
 
 ---
 
@@ -556,4 +557,88 @@ focus shows copy. **4 viewports × 5 steps = 20/20 PASS.**
 tests use `monkeypatch.setenv` so they're unaffected; the 2 P4
 tests now see the legacy `flag_off` shape again. **P4 file
 14/14, was 12/14.** Production env unchanged.
+
+
+
+---
+
+## 17. Q4Y harness — `POST /api/admin/qa/seed/question` (2026-02 fork-resume)
+
+Super-admin gated test endpoint that seeds a `cycle_questions`
+row directly so headless flows can exercise the Questions surface
+without going through Solva. Same gating + pattern as the existing
+`/api/admin/qa/seed/recent-doc` hook.
+
+### Request shape
+```json
+POST /api/admin/qa/seed/question
+{
+  "text": "What is the runway under stress scenario B?",
+  "asker_role": "board",            // optional — "board" | "ceo" | "team", default "board"
+  "status": "open",                  // optional — "open" | "pending" | "answered" | "resolved", default "open"
+  "context_id": "ctx-xyz",           // optional — falls back to admin's `default_context_id`
+  "cycle_id": "",                    // optional — empty string by default
+  "assignee_account_id": "acc-abc"   // optional — defaults to admin caller
+}
+```
+
+### Response shape
+```json
+{
+  "ok": true,
+  "question": {
+    "id": "<hex>",
+    "context_id": "...",
+    "cycle_id": "",
+    "assignee_account_id": "...",
+    "asker_role": "board",
+    "text": "What is the runway under stress scenario B?",
+    "status": "open",
+    "asked_at": "<iso>",
+    "history": [{"ts": "...", "kind": "raised", "actor_id": "..."}]
+  }
+}
+```
+
+The `_qa_seed: true` marker is stored on the Mongo row for headless
+cleanup but is stripped from ALL list-endpoint and mark-answered
+responses (see `routers/questions.py::_strip`).
+
+### Manual repro
+```python
+import asyncio, os, requests
+from motor.motor_asyncio import AsyncIOMotorClient
+
+# 1. Sign in as admin, capture token + CSRF.
+# 2. POST the seed.
+URL = "https://akki-executive.preview.emergentagent.com"
+# (token + csrf flow from §6 above)
+r = requests.post(
+    f"{URL}/api/admin/qa/seed/question",
+    headers={"Authorization": f"Bearer {TOKEN}", "X-CSRF-Token": CSRF},
+    json={"text": "What is the runway under stress scenario B?",
+          "asker_role": "board"},
+)
+print(r.status_code, r.json()["question"]["id"])
+```
+
+### Q4Y wire surfaces (cite these in any future bug repro)
+- List endpoint: `GET /api/me/questions?status=…&sort=…&q=…&asker_role=…&page=…`
+- Cycle-scoped list: `GET /api/contexts/{cid}/cycles/{cid}/questions?status=…&sort=…&asker_role=…`
+- Mark-answered: `POST /api/contexts/{cid}/questions/{qid}/mark-answered` body `{note?: str}`
+- Use in Solva seed: `GET /api/solva/v2/seed?kind=question&id={qid}` → `{seed_text, citation_label}`
+- Use in Chat linked-context: pass `ctx_type=question&ctx_id={qid}` to any chat-create or `/api/chat/messages` POST
+
+### Sort keys (P0-S1)
+`recent` (default — `asked_at desc`) · `oldest` (`asked_at asc`) ·
+`answered_at_desc` (`answered_at desc`). Unknown keys → 400.
+
+### Q4Y lockdown tests
+- `tests/test_q4y_p0_s1_sort_wiring.py` (7)
+- `tests/test_q4y_p0_c3_mark_answered.py` (7)
+- `tests/test_q4y_p1_c1_use_in_solva.py` (6)
+- `tests/test_q4y_p1_c2_use_in_chat.py` (8)
+- `tests/test_q4y_p1_f3_server_search.py` (6)
+
+**Total: 34 tests, all PASS.**
 

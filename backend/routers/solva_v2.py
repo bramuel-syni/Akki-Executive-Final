@@ -1974,6 +1974,8 @@ async def fork_session(
 #   • solva_artefact      — prior Solva session artefact (db.solva_v2_sessions)
 #   • chat_message        — single chat message (db.chat_messages)
 #   • ned_meeting         — NED meeting formulated_question (db.ned_meetings)
+#   • question            — Q4Y P1-C1 (2026-02 fork-resume) — Questions
+#                           surface row (db.cycle_questions)
 #
 # Returns: {seed_text, citation_label} where seed_text is ≤ 600
 # chars (the textarea pre-fill ceiling per the spec), citation_label
@@ -2088,12 +2090,41 @@ async def fetch_take_to_solva_seed(
         )
         citation_label = f"{mt.get('committee', '')} · {mt.get('title', '')}"
 
+    elif kind == "question":
+        # Q4Y P1-C1 (2026-02 fork-resume) — "Use in Solva" CTA from
+        # the Questions surface. Tenant scope is enforced via the
+        # same `memberships` lookup the other kinds use (chat-message
+        # at line 2010, document at line 2023 — same shape).
+        # cycle_questions rows carry `context_id`; the caller must
+        # be a member of that context. Citation_label format:
+        #   "Question · {first 60 chars of text}…"
+        rec = await db.cycle_questions.find_one(
+            {"id": sid_in}, {"_id": 0},
+        )
+        if not rec:
+            raise HTTPException(status_code=404, detail="question not found")
+        # Membership check — caller must be on the question's context.
+        m = await db.memberships.find_one(
+            {"context_id": rec.get("context_id"), "account_id": aid,
+              "status": "active"},
+            {"_id": 0},
+        )
+        if not m:
+            raise HTTPException(status_code=404, detail="question not found")
+        text = (rec.get("text") or "").strip()
+        seed_text = _clip(text)
+        # Truncate at 60 chars + ellipsis for the citation label.
+        snippet = text[:60].rstrip()
+        if len(text) > 60:
+            snippet += "…"
+        citation_label = f"Question · {snippet}" if snippet else "Question"
+
     else:
         raise HTTPException(
             status_code=400,
             detail=f"unsupported seed kind: {kind!r}. Supported: "
                    "signal, document, cycle_contribution, cycle_compilation, "
-                   "solva_artefact, chat_message, ned_meeting.",
+                   "solva_artefact, chat_message, ned_meeting, question.",
         )
 
     return {"kind": kind, "id": sid_in,
