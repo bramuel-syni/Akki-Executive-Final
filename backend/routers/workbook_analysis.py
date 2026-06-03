@@ -47,6 +47,7 @@ from services.workbook_analyzer import (
     WorkbookAnalysis,
     WorkbookCitation,
     WorkbookCitationResolver,
+    WorkbookColumn,
     WorkbookSheet,
     build_docx_report,
     build_pptx_report,
@@ -115,6 +116,99 @@ async def _load_analysis(analysis_id: str, account_id: str) -> WorkbookAnalysis:
         # another tenant" — no existence leak.
         raise HTTPException(404, "workbook_analysis_not_found")
     return WorkbookAnalysis.model_validate(row)
+
+
+# ── Track A Phase 1 surgical fix (2026-06-03) ────────────────────
+# The three export endpoints below need to serve BOTH the legacy
+# `wba-*` analyses (created via `/upload`) AND the new `ana-*`
+# analyses (created via `/upload-multi`). The synthesize/read
+# endpoints continue to use `_load_analysis` and stay
+# legacy-collection-only — Phase 3 will extend them to the new
+# entity once Solva v2 narration exists.
+#
+# Surgical seam: a sibling loader used ONLY by the three exports.
+# Blast radius = three call sites; everything else unchanged.
+
+def _adapt_new_analysis_to_workbook_analysis(row: Dict[str, Any]) -> WorkbookAnalysis:
+    """Build a minimal `WorkbookAnalysis` view from a new-entity
+    `Analysis` row so the existing PPTX/DOCX/XLSX builders can
+    consume it without modification.
+
+    Phase 1 carries no synthesis data — empty signals /
+    simulations / forecasts / anomalies. Phase 3 will replace
+    this shim with real per-source narration via Solva v2."""
+    sources = row.get("sources", []) or []
+    columns = [
+        WorkbookColumn(
+            name="filename", letter="A", kind="text",
+            non_null_count=len(sources), null_count=0,
+            sample_values=[s.get("filename", "") for s in sources[:6]],
+        ),
+        WorkbookColumn(
+            name="format", letter="B", kind="categorical",
+            non_null_count=len(sources), null_count=0,
+            sample_values=[s.get("file_format", "") for s in sources[:6]],
+        ),
+        WorkbookColumn(
+            name="size_bytes", letter="C", kind="numeric",
+            non_null_count=len(sources), null_count=0,
+            sample_values=[s.get("file_size_bytes", 0) for s in sources[:6]],
+        ),
+    ]
+    sources_sheet = WorkbookSheet(
+        name="Analysis Sources",
+        n_rows=len(sources),
+        n_columns=3,
+        columns=columns,
+    )
+
+    file_format = (sources[0].get("file_format") if sources else "xlsx")
+    file_size = sum((s.get("file_size_bytes") or 0) for s in sources)
+    filename = row.get("title") or (
+        sources[0].get("filename") if sources else "analysis"
+    )
+
+    return WorkbookAnalysis(
+        id=row["id"],
+        account_id=row["account_id"],
+        context_id=row.get("context_id"),
+        # `document_id` is required on the legacy schema. Use the
+        # analysis id as a stable surrogate so `extra="forbid"`
+        # construction succeeds. No leakage — this WorkbookAnalysis
+        # instance is ephemeral, never written back.
+        document_id=row["id"],
+        filename=filename,
+        file_format=file_format,
+        file_size_bytes=file_size,
+        status="ready",
+        sheets=[sources_sheet],
+        signals=[],
+        simulations=[],
+        forecasts=[],
+        anomalies=[],
+        created_at=row.get("created_at") or _now_iso(),
+        updated_at=row.get("updated_at") or _now_iso(),
+    )
+
+
+async def _load_analysis_for_export(
+    analysis_id: str, account_id: str,
+) -> WorkbookAnalysis:
+    """Prefix-dispatch loader used ONLY by the three export
+    endpoints (`report.pptx`/`.docx`/`.xlsx`).
+
+    `ana-*` ids load from `db.analyses` via the shim above.
+    Other ids fall through to the legacy `_load_analysis` (which
+    reads `db.workbook_analyses`)."""
+    if analysis_id.startswith("ana-"):
+        row = await db.analyses.find_one(
+            {"id": analysis_id, "account_id": account_id},
+            {"_id": 0},
+        )
+        if not row:
+            raise HTTPException(404, "workbook_analysis_not_found")
+        return _adapt_new_analysis_to_workbook_analysis(row)
+    return await _load_analysis(analysis_id, account_id)
 
 
 async def _save_analysis(analysis: WorkbookAnalysis) -> None:
@@ -462,7 +556,7 @@ async def anomalies_endpoint(
 
 @router.get("/analyses/{aid}/report.pptx")
 async def report_endpoint(aid: str, current: Dict[str, Any] = Depends(get_current_account)):
-    analysis = await _load_analysis(aid, current["id"])
+    analysis = await _load_analysis_for_export(aid, current["id"])
     try:
         pptx_bytes = build_pptx_report(analysis)
     except RefuseToDecideViolation as e:
@@ -495,7 +589,7 @@ async def report_endpoint(aid: str, current: Dict[str, Any] = Depends(get_curren
 
 @router.get("/analyses/{aid}/report.docx")
 async def report_docx_endpoint(aid: str, current: Dict[str, Any] = Depends(get_current_account)):
-    analysis = await _load_analysis(aid, current["id"])
+    analysis = await _load_analysis_for_export(aid, current["id"])
     try:
         docx_bytes = build_docx_report(analysis)
     except RefuseToDecideViolation as e:
@@ -514,7 +608,7 @@ async def report_docx_endpoint(aid: str, current: Dict[str, Any] = Depends(get_c
 
 @router.get("/analyses/{aid}/report.xlsx")
 async def report_xlsx_endpoint(aid: str, current: Dict[str, Any] = Depends(get_current_account)):
-    analysis = await _load_analysis(aid, current["id"])
+    analysis = await _load_analysis_for_export(aid, current["id"])
     try:
         xlsx_bytes = build_xlsx_report(analysis)
     except RefuseToDecideViolation as e:

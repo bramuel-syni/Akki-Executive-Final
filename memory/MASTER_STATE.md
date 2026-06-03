@@ -135,7 +135,7 @@ None. Awaiting tester journey-completion verification (R3) for Track A Phase 1 +
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-03T20:04:22Z (initial); updated 2026-06-03T20:43:17Z (Track A+B Phase 1 close)
-- **Agent:** discipline-step-1 (initial); track-a-track-b-phase1 (this update)
-- **Mode:** read-only on /app/memory + matrix at initial write; product-code edits in second update strictly within approved Pre-Read scope.
-- **File-creation scope:** this file + new tracked artefacts listed in `sprints/TRACK_A_PHASE1_AND_TRACK_B_PHASE1_combined.md` §1.
+- **Written:** 2026-06-03T20:04:22Z (initial); updated 2026-06-03T20:43:17Z (Track A+B Phase 1 close); updated 2026-06-03T20:58:11Z (Track A Phase 1 R3 BLOCKER surgical fix — export dispatch on `ana-*` ids; admin first-session state reset to terminal)
+- **Agent:** discipline-step-1 (initial); track-a-track-b-phase1 (first close); track-a-r3-blocker-fix (this update)
+- **Mode:** product-code edits strictly within approved Pre-Read scope + the R3 surgical-fix dispatch. Track A Phase 1 stays 🟡 PARTIAL — flip to ✅ is the tester's call, not the agent's.
+- **File-creation scope:** see `sprints/TRACK_A_PHASE1_R3_BLOCKER_FIX.md` §1.
