@@ -1,6 +1,60 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Q4Y-FIX sibling sub-dispatch — `/api/api/me/questions` typo repair ✅ SHIPPED (2026-02 fork-resume)
+
+**Per your Option A decision.** One-line product fix; closes the pre-existing blocker the harness sub-dispatch surfaced.
+
+**The fix (cited file:line):**
+- `frontend/src/pages/Questions.jsx:456`: `api.get("/api/me/questions", …)` → `api.get("/me/questions", …)`. Strips the redundant `/api/` prefix; axios `baseURL = "/api"` (`frontend/src/lib/api.js:45-49`) adds it back exactly once.
+
+**Repo-wide grep first** — only one same-class typo existed in the entire FE codebase. No siblings to repair. No scope creep.
+
+**Source-text lockdowns** (`backend/tests/test_q4y_fix_questions_api_prefix.py`):
+1. Page-specific assertion: Questions.jsx does NOT contain `api.get("/api/me/questions"`; DOES contain `api.get("/me/questions"`.
+2. Repo-wide sweep: no `.js`/`.jsx` file under `frontend/src` carries a leading `/api/` URL passed to any axios verb. Comment-stripped to avoid doc-string false positives. Catches the entire root-cause class anywhere in the FE going forward.
+
+**Raw Playwright trace** (`/tmp/q4y_fix_trace.py`, single viewport per dispatch contract — bug is not viewport-sensitive): **9/9 steps PASS.**
+
+Verbatim final report:
+```
+✓ signed in
+✓ sessionStorage primed
+✓ row rendered (count=1, testid='question-row-99200f5ba1734af2af006cef90d075bd')
+✓ drawer opened
+✓ all 4 CTAs render
+✓ mark-answered flipped status
+✓ re-opened answered row
+✓ Use in Solva → ctx_type=question&ctx_id=99200f5ba1734af2af006cef90d075bd
+✓ Use in Chat → ctx_type=question&ctx_id=99200f5ba1734af2af006cef90d075bd
+OVERALL: PASS
+```
+
+**Discipline gates (verbatim):**
+- Solva v1 byte-identical guard: `4 passed`.
+- Voice-lint: `clean across customer-copy surfaces`.
+- Broad bundle: **`189 passed, 22 warnings in 599.43s`**. Δ from prior 187 = **+2 net new** (the two source-text lockdowns).
+
+**Closes:** the 4 UI sub-checks the tester previously flagged `HUMAN_REQUIRED`. Verbatim row text captured in the memo (`Q4Y-FIX trace QFIX-9344ad`); verbatim Use-in-Solva and Use-in-Chat URLs captured with `ctx_type=question&ctx_id=<seeded id>`.
+
+**Bug-fix roadmap closed:** P0 + P1 + Q4Y + harness + Q4Y-FIX all green. Consolidated handoff with remaining user-side blockers comes next dispatch per your sequencing.
+
+**Files touched:**
+```
+M frontend/src/pages/Questions.jsx           # 1 line
+M memory/auth_testing.md                       # KNOWN BLOCKER → CLOSED
+?? backend/tests/test_q4y_fix_questions_api_prefix.py
+?? memory/sprints/q4y_fix.md
+?? /tmp/q4y_fix_trace.py
+```
+
+**Production env actions:** none.
+
+**Memo:** `memory/sprints/q4y_fix.md`.
+
+**Resume contract:** Awaiting your final e1_tester re-run on the 4 UI sub-checks + final regression sweep, then the consolidated handoff.
+
+
 ### Q4Y harness sub-dispatch — Block 1+3 done · KNOWN BLOCKER surfaced (2026-02 fork-resume)
 
 **Harness-only dispatch.** Per your scope: Block 1 (READ-ONLY active-context doc) + Block 3 (confirm seed completeness). No new endpoint added — the mechanism is one sessionStorage key (per Honesty Protocol: do not invent work).

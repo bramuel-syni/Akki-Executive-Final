@@ -703,59 +703,50 @@ await db.cycle_questions.delete_many({"id": qid})
 await db.cycle_questions.delete_many({"_qa_seed": True})
 ```
 
-### ⚠️ KNOWN PRE-EXISTING BLOCKER — `Questions.jsx:456` doubled `/api/api/`
+### ⚠️ KNOWN PRE-EXISTING BLOCKER — `Questions.jsx:456` doubled `/api/api/` (CLOSED 2026-02 by Q4Y-FIX)
 
-**This is NOT a harness gap.** The harness mechanism above is
-verified working (`/tmp/q4y_harness_verify.py` → 4 viewports × 3
-steps PASS = 12/12). The seeded row IS reachable from the SPA's
-own cookie/bearer context via `fetch("/api/me/questions?q=...")`
-returning HTTP 200 with the row.
+**Status:** ✅ CLOSED. The 1-line fix was shipped in
+`memory/sprints/q4y_fix.md` (Q4Y-FIX sibling sub-dispatch).
+`Questions.jsx:456` now reads `api.get("/me/questions", …)` — the
+axios `baseURL = "/api"` prepends the prefix exactly once.
+Repo-wide source-text lockdown
+(`tests/test_q4y_fix_questions_api_prefix.py`) prevents regression
+on this caller AND any other axios caller anywhere in the FE.
 
-**The blocker:** `frontend/src/pages/Questions.jsx:456` calls
+The verification Playwright trace at `/tmp/q4y_fix_trace.py`
+asserts the full user click sequence (row renders → drawer opens
+→ Mark as Answered flips status → Use in Solva URL → Use in Chat
+URL). 9/9 steps PASS.
+
+For historical context (the bug shape, kept here in case anyone
+revives the dead-empty-state symptom in another page):
+
+`frontend/src/pages/Questions.jsx:456` used to call
 `api.get("/api/me/questions", ...)`. The axios client `api` has
-`baseURL = "/api"`. Axios prepends baseURL to any non-absolute
-URL, so the SPA's actual network request is for
-`/api/api/me/questions?...` which returns **404**. The page's
-`catch` block at `Questions.jsx:481-483` swallows the error,
-calls `setItems([])` + `setTotal(0)`, and renders the empty
-state.
+`baseURL = "/api"` (see `frontend/src/lib/api.js:45-49`). Axios
+prepends baseURL to any non-absolute URL, so the SPA's actual
+network request was for `/api/api/me/questions?...` which
+returned **404**. The page's `catch` block at
+`Questions.jsx:481-483` swallowed the error, called
+`setItems([])` + `setTotal(0)`, and rendered the empty state.
 
-**Cited evidence (Playwright network log):**
+**Cited evidence (Playwright network log from the discovery
+dispatch):**
 ```
-GET /api/me/questions      → 200 (probe via raw fetch — works)
+GET /api/me/questions      → 200 (probe via raw fetch — worked)
 GET /api/api/me/questions  → 404 (SPA's actual call — broken)
 ```
 
-**Pre-existing.** `git blame frontend/src/pages/Questions.jsx -L 456`
-shows commit `c0feb679` from 2026-05-12 (Patch 14 — the page's
-original implementation). Predates the entire Q4Y P0+P1 dispatch,
-this fork, and this harness sub-dispatch.
+**Blame:** `c0feb6790` (2026-05-12, Patch 14). Predated the entire
+fork. Single-line outlier; every other api.get() call in the
+codebase uses the bare-path form.
 
-**Implications for e1_tester:**
-The 4 UI sub-checks that flagged `HUMAN_REQUIRED` will REMAIN
-blocked even after applying the documented sessionStorage prime —
-the page literally cannot render any question row because of the
-doubled-`/api` bug. The harness-only contract for THIS dispatch
-forbids any Q4Y FE code change, so the tester should re-run the
-**API-layer** sub-checks (which already passed 7/7 last time) and
-treat the 4 UI sub-checks as `BLOCKED_BY_PRE_EXISTING_BUG` pending
-a separate Q4Y FE fix dispatch.
+**Implication for e1_tester (NOW UNBLOCKED):**
+The 4 UI sub-checks that previously flagged `HUMAN_REQUIRED`
+because the headless tester couldn't reach the rendered drawer
+are now reachable. Re-run them — they should pass under the same
+sessionStorage prime recipe documented above.
 
-**Minimal fix (FOR A LATER DISPATCH — not this one):**
-Change `Questions.jsx:456` from
-```jsx
-const r = await api.get("/api/me/questions", { params: {...} });
-```
-to
-```jsx
-const r = await api.get("/me/questions", { params: {...} });
-```
-(strip the redundant `/api/` prefix — the axios `baseURL` adds
-it). Every other api.get() call in the codebase uses the bare
-path; this line is the only outlier. Estimated impact: 1 line +
-regression of the existing 34 Q4Y backend tests + a Playwright
-trace that asserts the row renders. Surface, get approval, then
-ship as a sibling to this dispatch.
 
 
 

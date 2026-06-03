@@ -453,7 +453,7 @@ export default function Questions() {
         );
         data = r.data;
       } else {
-        const r = await api.get("/api/me/questions", {
+        const r = await api.get("/me/questions", {
           params: {
             status: filter === "all" ? "all" : filter,
             page, page_size: 10,
