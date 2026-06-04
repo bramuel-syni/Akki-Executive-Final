@@ -109,6 +109,55 @@ async def test_synthesize_returns_narration_payload(transport, monkeypatch):
         assert body["refused"] is False
 
 
+# ─── R3 BLOCKER regression — fenced JSON from Claude ──────────
+
+
+@pytest.mark.asyncio
+async def test_synthesize_handles_fenced_json_from_claude(transport, monkeypatch):
+    """R3 BLOCKER regression (2026-06-04).
+
+    The previous test bench monkey-patched shield_invoke to return
+    BARE JSON. The live Claude Sonnet wire response wraps the JSON
+    in ```json … ``` markdown fences AND occasionally prepends a
+    leading prose line. The parser must accept both shapes, OR the
+    synthesize endpoint refuses with `llm_returned_non_json` even on
+    a perfectly-good narration (the exact failure mode that broke
+    J19 + J20).
+
+    The fenced sample below is the literal wire format Claude
+    returns. The test asserts the parser handles it and the
+    synthesize endpoint populates a non-empty headline."""
+    from services.solva_v2 import analyze_narration as narr
+
+    fenced_wire = (
+        "Here's the synthesis:\n"
+        "```json\n"
+        '{"headline": "Top-line growth slowed across three regions.", '
+        '"observations": [ '
+        '{"tab": "what_changed", "title": "Three regions slowed", '
+        '"body": "EMEA, APAC, and LATAM grew at half the prior quarter pace.", '
+        '"evidence_citation_indices": [0]} ]}\n'
+        "```"
+    )
+    monkeypatch.setattr(narr, "shield_invoke", AsyncMock(return_value={
+        "response": fenced_wire,
+        "trust_receipt": {}, "audit_id": "test-fenced",
+    }))
+
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        admin = await _csrf_login(ac, "admin@akki.ai", "AkkiAdmin2026!")
+        aid = await _seed_multi(ac, admin, ctx="tap3-fence-" + uuid.uuid4().hex[:6])
+        r = await ac.post(f"/api/workbook/v2/analyses/{aid}/synthesize", headers=admin)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("refused") is False, (
+            f"Parser refused fenced Claude output: {body.get('refusal_reason')!r}"
+        )
+        assert body["headline"] == "Top-line growth slowed across three regions."
+        titles = [o["title"] for o in body.get("observations") or []]
+        assert "Three regions slowed" in titles
+
+
 @pytest.mark.asyncio
 async def test_synthesize_idempotent_cache_key(transport, monkeypatch):
     from services.solva_v2 import analyze_narration as narr

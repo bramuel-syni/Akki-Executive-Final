@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -193,6 +194,79 @@ def _voice_lint(text: str) -> bool:
     return not any(b in lowered for b in banned)
 
 
+def _extract_json_payload(raw: str) -> Optional[str]:
+    """Track A Phase 3 R3 BLOCKER fix (2026-06-04).
+
+    Claude Sonnet (and several other models behind shield_invoke)
+    routinely wrap structured output in markdown fences:
+
+        ```json
+        {"headline": ...}
+        ```
+
+    or with leading prose:
+
+        Here's the analysis:
+        ```json
+        {"headline": ...}
+        ```
+
+    The previous parser passed `raw` straight to `json.loads`, which
+    raised on every fenced response — surfaced as
+    `refusal_reason="llm_returned_non_json"` even when the LLM had
+    produced clean JSON. The synthesize endpoint then persisted an
+    empty narration, masking even the deterministic forecast output
+    (Bug #30 J20 also failed by dependence).
+
+    This helper walks four candidate-extraction strategies, in order
+    of specificity, and returns the first one that parses. None →
+    caller falls back to the refusal path.
+    """
+    if not raw:
+        return None
+    text = raw.strip()
+
+    # (1) Bare JSON object — current happy path, preserved.
+    if text.startswith("{") and text.endswith("}"):
+        return text
+
+    # (2) ```json … ``` fenced block (case-insensitive language hint).
+    m = re.search(r"```(?:json|JSON|Json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+
+    # (3) Leading prose, then a top-level JSON object somewhere in the
+    #     string. Use a depth-balanced sweep starting at the first `{`
+    #     so we capture the entire object even if it contains nested
+    #     `}`s (the regex above is non-greedy and may stop short).
+    first_brace = text.find("{")
+    if first_brace >= 0:
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(first_brace, len(text)):
+            ch = text[i]
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"' and not escape:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[first_brace:i + 1]
+
+    return None
+
+
 async def narrate_analysis(
     *,
     workbook_analysis: WorkbookAnalysis,
@@ -248,8 +322,18 @@ async def narrate_analysis(
         }
 
     raw = shield_out.get("response") or ""
+    payload_str = _extract_json_payload(raw)
+    if payload_str is None:
+        return {
+            "headline": "",
+            "observations": [],
+            "citations": [],
+            "cache_key": cache_key,
+            "refused": True,
+            "refusal_reason": "llm_returned_non_json",
+        }
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(payload_str)
     except Exception:  # noqa: BLE001
         return {
             "headline": "",

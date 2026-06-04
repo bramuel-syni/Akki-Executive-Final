@@ -132,7 +132,7 @@ Status legend:
 ### Track B — QA cleanup
 - Phase B1 (small mechanical onboarding + signin): **O4** ✅ shipped + **O6** ✅ shipped + **G1** ✅ shipped (Fig 20 — `/sign-in` → `/signin` × 4 buttons) + **G2 Fig 22 modal** ✅ shipped (SessionTimeoutGuard handler gated on `account`); **O7** Fig 7 (🟡 tester-pending). Phase status: 🟡 READY FOR TESTER RE-VERIFY (G1, O4, O6, G2-modal land in same dispatch as O7 v2 — all four need tester journey-completion). Memos: `sprints/TRACK_B_PHASE1_FIG7_V2_ROOT_CAUSE_FIX.md`, `sprints/TRACK_B_PHASE1B_O4_O6_FIG20_FIG22.md`.
 - Phase B2 (Task Manager lifecycle): TM1 (filter badges) + TM2 (Commission button + full Closure flow) + TM5 (View more → follow-up emails page) → 🟡 SHIPPED tester-pending 2026-06-04T04:07:54Z. Commission/Close endpoints (idempotent, audit-logged); filter-tab live count badges via `/api/tasks/counts`; FollowUpDraftsCard "View more" → `/app/cycle/drafts`. Memo: `sprints/TRACK_A_PHASE2_AND_TRACK_B_PHASE2_combined.md`.
-- Phase B3 (Questions feature wiring): G13 (related-doc-as-attachment) + G14 (Share CTA) + G17 (Share modal full spec) + G19 (response association) + G20 (Open-until-confirmed) + G21 (reopening flow) + G22 (response history) + G23 (empty state + Go to Document CTA — NEW vs prior matrix) → 🟡 SHIPPED tester-pending 2026-06-04T04:48:35Z. Endpoints: `/contexts/{cid}/questions/{qid}/{share,reopen,link-response}` — all tenant-scoped, audit-logged via `history[]` with new kinds (`shared`, `reopened`, `response_linked`). FE: Reopen button on Answered drawers, Share modal with recipients + message, Link-response picker, related-doc card. Empty state verbatim QA copy + Go to Document CTA. Memo: `sprints/TRACK_A_PHASE3_AND_TRACK_B_PHASE3_combined.md`.
+- Phase B3 (Questions feature wiring): G13 (related-doc-as-attachment) + G14 (Share CTA) + G17 (Share modal full spec) + G19 (response association) + G20 (Open-until-confirmed) + G21 (reopening flow) + G22 (response history) + G23 (empty state + Go to Document CTA — NEW vs prior matrix) → ✅ SHIPPED 2026-06-04 — tester-verified 4/4 Open Questions journeys. Memo: `sprints/TRACK_A_PHASE3_AND_TRACK_B_PHASE3_combined.md`.
 - Phase B4 (cross-feature surfacing): G11 (Open Question card click → Your Questions; doc-extracted Q surface) → ❌ NOT STARTED
 - Phase B5 (Document workflow + Calendar polish): G6 (Notes autosave full spec) + G7 (Send Share Field-required error) + G10 (Calendar text in fig 32 to be removed) → ❌ NOT STARTED
 
@@ -156,7 +156,7 @@ None. Awaiting tester journey-completion verification (R3) for Track A Phase 1 +
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-03T20:04:22Z → 2026-06-04T04:48:35Z (Track A Phase 3 + Track B Phase 3 — Solva narration + Bug #30 + Open Questions completion)
-- **Agent:** discipline-step-1 → … → track-a-phase3-track-b-phase3 (this update)
-- **Mode:** Product-code edits strictly within approved Pre-Read scope. Both Phase 3 dispatches shipped in parallel; tester journey-completion pending.
-- **Combined memo:** `sprints/TRACK_A_PHASE3_AND_TRACK_B_PHASE3_combined.md`
+- **Written:** 2026-06-03T20:04:22Z → 2026-06-04T05:00:36Z (Track A Phase 3 R3 BLOCKER surgical fix — `_extract_json_payload` strips Claude markdown fences before `json.loads`; new fenced-wire regression test)
+- **Agent:** discipline-step-1 → … → track-a-phase3-r3-blocker-fix (this update)
+- **Mode:** Surgical fix dispatch. Track B Phase B3 ✅ per tester verdict. Track A Phase 3 stays 🟡 pending tester re-verify of J19 + J20.
+- **Combined memo:** `sprints/TRACK_A_PHASE3_R3_BLOCKER_FIX.md`
