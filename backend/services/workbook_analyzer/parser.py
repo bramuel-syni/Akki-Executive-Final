@@ -64,7 +64,13 @@ def _coerce_value(raw: Any) -> Tuple[Any, ColumnKind]:
         except ValueError:
             pass
     # Try ISO date.
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%m/%d/%Y"):
+    # Track A Phase 3 R3v5 (2026-06-04) — added %Y-%m and %Y/%m so
+    # monthly series like "2024-01" classify as `kind="date"`.
+    # strptime defaults the missing day to 1, so the resulting
+    # `date(2024,1,1)` works with `_to_ordinal` untouched. Net
+    # effect: the J19 happy-path workbook (Month/Sales) now reaches
+    # the autopicker → run_forecast → forecast block → narration.
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m", "%Y/%m"):
         try:
             return datetime.strptime(s, fmt).date(), "date"
         except ValueError:

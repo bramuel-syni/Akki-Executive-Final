@@ -486,8 +486,33 @@ def _validate_observation_completeness(
     flags: Dict[str, bool] = {}
     for tab in (required_tabs - present):
         flags[f"partial_narration_missing_{tab}"] = True
-    # Backwards-compat alias for R3v2 consumers.
-    if "whats_likely_next" in (required_tabs - present):
+
+    # Track A Phase 3 R3v5 (2026-06-04) — safety-net branch.
+    # When the autopicker rejected the workbook (`forecast_attempted=
+    # False`) but the LLM still produced ≥1 observation, the user
+    # has genuinely lost forward-looking commentary even though no
+    # deterministic forecast block was ever attempted. Surface a
+    # banner so the FE can render "forecast not attempted on this
+    # workbook" instead of a silent single-tab render.
+    #
+    # IMPORTANT — narrow scope. The safety-net only fires for
+    # `whats_likely_next` (the forecast tab's whole point is
+    # forward-looking). It does NOT auto-imply `whats_odd` missing:
+    # an anomalies block that ran and found zero records is a clean
+    # workbook, not a missing tab — firing a flag there would cry
+    # wolf on every clean spreadsheet.
+    if (
+        not forecast_attempted
+        and not any(b.kind == "forecast" for b in blocks)
+        and len(observations) >= 1
+        and "whats_likely_next" not in present
+    ):
+        flags["partial_narration_missing_whats_likely_next"] = True
+
+    # Backwards-compat alias for R3v2 consumers — fires whenever
+    # `whats_likely_next` is missing, by required-tab path OR by
+    # the safety-net path above.
+    if flags.get("partial_narration_missing_whats_likely_next"):
         flags["partial_narration_missing_forecast"] = True
     return flags
 

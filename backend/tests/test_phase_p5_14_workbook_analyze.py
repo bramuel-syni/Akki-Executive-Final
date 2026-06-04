@@ -72,6 +72,44 @@ def test_parser_rejects_unknown_format():
         parse_workbook(blob=b"x", file_format="parquet")
 
 
+def test_parser_classifies_yyyy_mm_strings_as_date():
+    """Track A Phase 3 R3v5 (2026-06-04) — the parser must accept
+    ISO `YYYY-MM` and `YYYY/MM` strings as `kind="date"` so monthly
+    series like the J19 happy-path workbook reach the autopicker.
+    `strptime` defaults the missing day to 1, so the resulting
+    `date(YYYY, MM, 1)` works with `_to_ordinal` untouched.
+
+    J19 shape: header `Month,Sales`, rows `2024-01..2025-04`.
+    """
+    csv_rows = ["Month,Sales"]
+    for i in range(16):
+        year = 2024 + (i // 12)
+        month = (i % 12) + 1
+        csv_rows.append(f"{year}-{month:02d},{100 + i * 10}")
+    blob = ("\n".join(csv_rows) + "\n").encode("utf-8")
+    sheets, _ = parse_workbook(blob=blob, file_format="csv")
+    assert len(sheets) == 1
+    cols = {c.name: c for c in sheets[0].columns}
+    assert "Month" in cols and "Sales" in cols
+    assert cols["Month"].kind == "date", (
+        f"YYYY-MM strings must classify as 'date'; got {cols['Month'].kind!r}"
+    )
+    assert cols["Sales"].kind == "numeric"
+    # Sample preview surfaces ISO date strings (date.isoformat → "2024-01-01").
+    assert cols["Month"].sample_values[0].startswith("2024-01")
+
+    # YYYY/MM variant — same widening covers slash separator.
+    csv_rows_slash = ["Month,Sales"]
+    for i in range(16):
+        year = 2024 + (i // 12)
+        month = (i % 12) + 1
+        csv_rows_slash.append(f"{year}/{month:02d},{100 + i * 10}")
+    blob_slash = ("\n".join(csv_rows_slash) + "\n").encode("utf-8")
+    sheets_slash, _ = parse_workbook(blob=blob_slash, file_format="csv")
+    cols_slash = {c.name: c for c in sheets_slash[0].columns}
+    assert cols_slash["Month"].kind == "date"
+
+
 # ─── Monte Carlo ────────────────────────────────────────────────
 
 

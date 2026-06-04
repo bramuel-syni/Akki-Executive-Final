@@ -344,6 +344,60 @@ async def test_post_shield_validator_sets_per_tab_missing_flags(transport, monke
     assert "partial_narration_missing_whats_likely_next" not in result
     assert "partial_narration_missing_forecast" not in result
 
+    # ── Path C — R3v5 safety-net branch ──────────────────────────
+    # `forecast_attempted=False` (autopicker rejected the workbook —
+    # e.g. parser couldn't classify the date column) AND ≥1 obs
+    # rendered AND `whats_likely_next` absent → safety-net fires the
+    # forecast-missing flag + BC alias so the FE never silently
+    # swallows the missing forward-looking tab.
+    #
+    # The matching anomalies-empty branch is INTENTIONALLY NOT
+    # widened to fire `whats_odd` — an empty anomalies block is a
+    # clean workbook, not a missing tab. Path C asserts both
+    # invariants: forecast flag fires; whats_odd flag does NOT.
+    cite_c = WorkbookCitation(cell_range="S!A1:B12", excerpt="sample")
+    wba_no_date = WorkbookAnalysis(
+        id="wba-unit-safetynet", account_id="acct-1", document_id="doc-1",
+        filename="x.xlsx", file_format="xlsx", file_size_bytes=1, status="ready",
+        sheets=[],
+        # Signals only — no forecast block (autopick rejected the
+        # workbook), no anomalies (clean spreadsheet).
+        signals=[WorkbookSignal(
+            kind="trend", title="Up", detail="Categorical breakdown.",
+            column="region", sheet="S", citations=[cite_c],
+        )],
+        forecasts=[],
+        anomalies=[],
+    )
+    only_what_changed = _shield_response({
+        "headline": "Regions A and B together drove 70% of orders.",
+        "observations": [
+            {"tab": "what_changed", "title": "Region mix concentrated",
+             "body": "Region A and Region B together captured most of the volume.",
+             "evidence_citation_indices": [0]},
+        ],
+    })
+    monkeypatch.setattr(narr, "shield_invoke", AsyncMock(side_effect=[only_what_changed, only_what_changed]))
+    result_c = await narr.narrate_analysis(
+        workbook_analysis=wba_no_date, account_id="acct-1", objective="",
+        # forecast_meta=None — autopicker rejected the workbook.
+        forecast_meta=None,
+    )
+    # Safety-net MUST fire the forecast-missing flag + BC alias.
+    assert result_c.get("partial_narration_missing_whats_likely_next") is True, (
+        f"safety-net did not fire whats_likely_next flag; got {sorted(result_c.keys())!r}"
+    )
+    assert result_c.get("partial_narration_missing_forecast") is True, (
+        f"safety-net did not fire BC alias; got {sorted(result_c.keys())!r}"
+    )
+    # whats_odd MUST NOT fire — empty anomaly block = clean workbook.
+    assert "partial_narration_missing_whats_odd" not in result_c, (
+        f"safety-net incorrectly fired whats_odd on empty anomalies block; "
+        f"got {sorted(result_c.keys())!r}"
+    )
+    # what_changed IS present — flag must not fire.
+    assert "partial_narration_missing_what_changed" not in result_c
+
 
 # ── 5+6. Autopicker surfaces picker_reason AND emits stdout ────
 
