@@ -228,6 +228,10 @@ async def work_studio_enhance_stream(
         "error": None,
         "refusal_text": None,
         "chat_audit_id": None,
+        # Track A Phase 5 (2026-06-04) — fig-53 card row 2 fields.
+        "source_count": 1,
+        "contributor_count": 1,
+        "akki_generated": True,
     }
     await db.work_studio_exports.insert_one(row)
 

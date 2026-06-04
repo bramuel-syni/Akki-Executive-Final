@@ -175,3 +175,163 @@ async def get_compilation(
     if not rec:
         raise HTTPException(status_code=404, detail="Compilation not found.")
     return _sanitize(rec)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Track A Phase 5 (2026-06-04) — /start endpoint
+#
+# Bridges the wizard's intent-log row (this collection) to the real
+# executor at `routers.work_studio_export._run_export`. Previously the
+# wizard POSTed `/compilations`, saw a 200, closed, and nothing else
+# ever happened — the `status="queued"` row sat untouched forever
+# because there is no worker reading this collection. Phase 5 wires
+# the wizard's "Commission Agent Cycle" submit through to the real
+# `_run_export` path which already materialises a `work_studio_exports`
+# row, runs the LLM, renders the file, and flips `lifecycle_state` to
+# `in_review` on completion.
+#
+# Idempotency (Tightening 3): if a prior `/start` call already minted
+# an `export_id` for this compilation_id, the second call returns the
+# existing one without spawning a duplicate `_run_export`. This is
+# essential because the wizard's "Commission" button is a common
+# double-click target.
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/contexts/{context_id}/work-studio/compilations/{compilation_id}/start")
+async def start_compilation(
+    context_id: str,
+    compilation_id: str,
+    background: __import__("fastapi").BackgroundTasks,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    rec = await db.compilations.find_one(
+        {"id": compilation_id, "context_id": context_id},
+        {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Compilation not found.")
+
+    # Tightening 3 — idempotency on double-clicks. If we already minted
+    # an export_id for this compilation, return it as-is.
+    existing_export_id = rec.get("export_id")
+    if existing_export_id:
+        existing_row = await db.work_studio_exports.find_one(
+            {"id": existing_export_id, "context_id": context_id},
+            {"_id": 0},
+        )
+        if existing_row:
+            return {
+                "export_id":      existing_export_id,
+                "status":         existing_row.get("status", "running"),
+                "compilation_id": compilation_id,
+                "idempotent":     True,
+            }
+
+    # Lazy-import to avoid a circular reference (work_studio_export →
+    # compilations via _run_export → work_studio_overlay → compilations
+    # for the `intent_log` listing — keeping the import here breaks the
+    # cycle).
+    from routers.work_studio_export import _run_export, ExportRequestIn
+    import uuid as _uuid
+    import logging as _logging
+    logger = _logging.getLogger("akki.compilations")
+
+    export_id = str(_uuid.uuid4())
+    artefact_type = rec.get("artefact_type", "report")
+    formats = rec.get("formats") or []
+    output_format = formats[0] if formats else "docx"
+    title = rec.get("title", "")
+    source_ids = rec.get("source_ids") or []
+    contributor_ids = rec.get("contributor_ids") or []
+    created_at = _iso(_now())
+
+    # Seed the work_studio_exports row directly — same shape as the
+    # `/export/{kind}` insert at routers/work_studio_export.py:1433
+    # but with Phase 5 additive fields populated from the compilation
+    # record (source_count = len(source_ids), contributor_count =
+    # len(contributor_ids) ∪ self).
+    row = {
+        "id": export_id,
+        "context_id": context_id,
+        "account_id": ctx["account"]["id"],
+        "kind": artefact_type,
+        "output_format": output_format,
+        "status": "running",
+        "description_chars": len(title),
+        "objective_chars": 0,
+        "scope_chars": 0,
+        "created_at": created_at,
+        "completed_at": None,
+        "file_name": None,
+        "file_path": None,
+        "sha256": None,
+        "sensitivity_band": None,
+        "error": None,
+        "refusal_text": None,
+        "chat_audit_id": None,
+        "compilation_id": compilation_id,
+        # Phase 5 additive fields.
+        "source_count": len(source_ids),
+        "contributor_count": max(1, len(set(contributor_ids) | {ctx["account"]["id"]})),
+        "akki_generated": True,
+    }
+    await db.work_studio_exports.insert_one(row)
+    await db.compilations.update_one(
+        {"id": compilation_id},
+        {"$set": {
+            "export_id": export_id,
+            "status": "running",
+            "last_compiled_at": created_at,
+        }},
+    )
+
+    # Build a minimal ExportRequestIn body. The wizard's title flows
+    # to `description`; objective/scope default to a short placeholder
+    # to satisfy the existing model's min_length=1 invariants.
+    body = ExportRequestIn(
+        description=title or f"{artefact_type} compile",
+        objective=f"Compile {artefact_type} from the bound sources.",
+        scope=f"Scope: {artefact_type} for this cycle.",
+        output_format=output_format,
+    )
+
+    async def _runner():
+        try:
+            await _run_export(
+                export_id=export_id, account_id=ctx["account"]["id"],
+                context_id=context_id, kind=artefact_type,
+                output_format=output_format, body=body,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Swallow contract: a crashed compile must not 500 the
+            # /start response that already returned 200. We log with
+            # exc_info=True and persist the failure on the
+            # work_studio_exports row so the FE polling sees `status=
+            # "failed"` (Phase 4 iter-2 discipline).
+            logger.warning(
+                "[compilation.start] _run_export crashed for compile=%s export=%s: %s",
+                compilation_id, export_id, exc, exc_info=True,
+            )
+            err_class = type(exc).__name__
+            err_msg = str(exc).replace("\n", " ").strip()[:300] or "(no message)"
+            await db.work_studio_exports.update_one(
+                {"id": export_id},
+                {"$set": {
+                    "status": "failed",
+                    "error": f"{err_class}: {err_msg}",
+                    "completed_at": _iso(_now()),
+                }},
+            )
+
+    background.add_task(_runner)
+
+    return {
+        "export_id":      export_id,
+        "status":         "running",
+        "compilation_id": compilation_id,
+        "idempotent":     False,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# (legacy — kept above)
+# ─────────────────────────────────────────────────────────────────────

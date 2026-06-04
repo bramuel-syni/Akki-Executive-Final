@@ -33,12 +33,14 @@ import {
 } from "@/components/ui/dialog";
 
 // ─────────────────────────────────────────────────────────────────────
-// RAG band helper (Q4 decision — mirrors backend services.work_studio_overlay.rag_band)
-// ≥80 green · 50-79 amber · <50 red · null → unrated.
+// RAG band helper (Phase 5 2026-06-04 — flipped from the Chunk 8
+// 80/50 thresholds to the QA-doc-mandated 75/50. Mirrors backend
+// `services.work_studio_overlay.rag_band`.)
+// ≥75 green · 50-74 amber · <50 red · null → unrated.
 // ─────────────────────────────────────────────────────────────────────
 export function ragBand(pct) {
   if (pct === null || pct === undefined) return "unrated";
-  if (pct >= 80) return "green";
+  if (pct >= 75) return "green";
   if (pct >= 50) return "amber";
   return "red";
 }
@@ -429,8 +431,11 @@ function Toolbar({
               size="sm"
               variant="outline"
               onClick={onToggleEdit}
-              className="rounded-sm text-[12px] border-[var(--rule)] hover:border-[var(--ink)]"
+              disabled
+              data-phase6="true"
+              className="rounded-sm text-[12px] border-[var(--rule)] hover:border-[var(--ink)] opacity-60 cursor-not-allowed"
               data-testid="document-overlay-edit-toggle"
+              title="Inline edit ships in Phase 6"
             >
               {editMode ? (<><Eye className="w-3.5 h-3.5 mr-1" /> Read mode</>) : (<><Pencil className="w-3.5 h-3.5 mr-1" /> Edit</>)}
             </Button>
@@ -666,7 +671,13 @@ function DocumentSurface({
   const editor = useEditor({
     extensions: [StarterKit],
     content: initialHtml,
-    editable: editMode && !isLegacyReadOnly,
+    // Track A Phase 5 (2026-06-04) — locked to read-only for the
+    // Document Review Side Drawer surface; inline edit re-enables
+    // in Phase 6. The toolbar's Edit button is disabled (data-phase6=
+    // true) and the secondary-toolbar "Inline edit on" indicator is
+    // a stub. Phase 5 = read-only render of DOCX/PPTX HTML; PDFs
+    // use an iframe instead (rendered outside this surface).
+    editable: false,
     editorProps: {
       attributes: {
         class: "akki-serif text-[14.5px] leading-[1.65] text-[var(--ink)] focus:outline-none",
@@ -675,9 +686,11 @@ function DocumentSurface({
     },
   });
 
-  // Keep editor.editable in sync with edit-mode toggle.
+  // Track A Phase 5 (2026-06-04) — editor stays in read-only mode
+  // regardless of the editMode flag (the toolbar button is disabled).
+  // Phase 6 will restore: `editor.setEditable(editMode && !isLegacyReadOnly);`.
   useEffect(() => {
-    if (editor) editor.setEditable(editMode && !isLegacyReadOnly);
+    if (editor) editor.setEditable(false);
   }, [editor, editMode, isLegacyReadOnly]);
 
   // Reload content when the doc identity changes (Create New Version, etc.)
@@ -749,8 +762,13 @@ function DocumentSurface({
           </span>
         ) : (
           <>
-            <span data-testid="document-overlay-surface-mode-indicator">
-              {editMode ? "Inline edit ON" : "Read mode — click Edit to make changes"}
+            <span
+              data-testid="document-overlay-surface-mode-indicator"
+              data-phase6="true"
+              className="text-[var(--muted)] italic"
+              title="Inline edit ships in Phase 6"
+            >
+              Inline edit on — Phase 6
             </span>
             <div className="ml-auto flex items-center gap-1.5">
               {editor && editMode && (
@@ -786,16 +804,25 @@ function DocumentSurface({
                   </button>
                 </>
               )}
-              <button
-                type="button"
-                onClick={onOpenRevise}
-                disabled={isLegacyReadOnly}
-                className="flex items-center gap-1 px-2 py-1 hover:bg-[var(--cream-deep)] rounded disabled:opacity-40 disabled:cursor-not-allowed"
-                data-testid="document-overlay-surface-revise-btn"
-              >
-                <Wand2 className="w-3.5 h-3.5" strokeWidth={1.6} />
-                Revise with AI
-              </button>
+              {/* Track A Phase 5 (2026-06-04) — Revise-with-AI is
+                  stubbed in Phase 5 (re-enables in Phase 6 with the
+                  diff-view panel). HIDDEN entirely for PDF
+                  output_format per QA spec; DISABLED everywhere
+                  else with the Phase 6 tooltip. */}
+              {doc.output_format !== "pdf" && (
+                <button
+                  type="button"
+                  onClick={() => {}}
+                  disabled
+                  data-phase6="true"
+                  title="Revise with AI ships in Phase 6"
+                  className="flex items-center gap-1 px-2 py-1 hover:bg-[var(--cream-deep)] rounded opacity-40 cursor-not-allowed"
+                  data-testid="document-overlay-surface-revise-btn"
+                >
+                  <Wand2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+                  Revise with AI
+                </button>
+              )}
             </div>
           </>
         )}

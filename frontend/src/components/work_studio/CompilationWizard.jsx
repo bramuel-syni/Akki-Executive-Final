@@ -452,9 +452,26 @@ export default function CompilationWizard({ open, onClose, contextId,
         `/contexts/${contextId}/work-studio/compilations`,
         body,
       );
-      toast.success(`${body.title} is being compiled. Agent Cycle will surface progress in the rail.`);
-      onCreated && onCreated(data);
+      // Track A Phase 5 (2026-06-04, W2) — chain through /start to
+      // trigger the real executor and surface the loading checklist.
+      // The compilations collection alone never progresses past
+      // status=queued; /start is what writes a work_studio_exports
+      // row and runs _run_export.
+      const startRes = await api.post(
+        `/contexts/${contextId}/work-studio/compilations/${data.id}/start`,
+      );
+      const exportId = startRes.data?.export_id;
+      toast.success(`${body.title} is being compiled. Watch the checklist for progress.`);
+      onCreated && onCreated({ ...data, export_id: exportId });
       onClose && onClose();
+      // Tell the parent (WorkStudio) to open the loading checklist
+      // modal for this export. The Compile-then-watch pattern from
+      // fig 54.
+      if (typeof window !== "undefined" && exportId) {
+        window.dispatchEvent(new CustomEvent("akki:work-studio-compile-started", {
+          detail: { exportId, kind: artefactType, title: body.title },
+        }));
+      }
     } catch (e) {
       toast.error(apiErrorMessage(e, "Could not commission Agent Cycle."));
     } finally {

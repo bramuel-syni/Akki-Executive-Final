@@ -237,34 +237,35 @@ Status legend:
 
 ## Section 6 — Active Phase
 
-**None active.** Track A Phase 4 ✅ COMPLETE 2026-06-04 (iter-1 6 steps + iter-2 3-fix corrective; final lockdown sweep 55/55 PASS; self-verified J21/J23/J24 against the LIVE preview via raw curl). All 10 shipped phases verified (Track A Phase 1+2+3+4, Track B B1 incl. B1b + B2 + B3 + B4 + B5). The full 3-doc QA backlog is closed except for the 2 USER-BLOCKED items. Paused pending user pick of next phase.
+**None active.** Track A Phase 5 ✅ COMPLETE 2026-06-04 (Work Studio Document Lifecycle Restoration — 11 scope items, 5 tightenings, 14 + 1 lockdown tests landed). All 11 shipped phases verified (Track A Phase 1+2+3+4+5, Track B B1 incl. B1b + B2 + B3 + B4 + B5). The full 3-doc QA backlog is closed except for the 2 USER-BLOCKED items. Paused pending user pick of next phase.
 
 ---
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T12:05:00Z (Track A Phase 4 final close-out — iter-2 corrective accepted on self-verification; counts updated; Phase 5 deprecation flag locked in Section 4).
-- **Agent:** track-a-phase-4-final-closeout.
-- **Mode:** Status flip + memo addendum + Section 3 recount. No new code changes in this dispatch (iter-2 ship already landed at 11:50Z). Evidence on file across iter-1 + iter-2: 55/55 PASS lockdown sweep; raw-curl trace at `/tmp/phase4_iter2_verify.py` confirms J21 real-LLM PASS + J23 empty-append PASS + J24 low-R² flag PASS against `https://akki-executive.preview.emergentagent.com`; ruff clean on all 4 touched backend files; ESLint clean on `AnalyzeDrawer.jsx`.
-- **Phase 4 close-out summary:** 6 steps (iter-1) + 3 corrective fixes (iter-2), 2 dispatches, 4/4 PASS at iter-1 (J21 partial, J22 PASS, J23 PARTIAL, J24 FAIL) → 4/4 PASS at iter-2 (J21 PASS, J22 PASS already, J23 PASS, J24 PASS). Tester re-run skipped per credit-discipline (raw-curl evidence equivalent to a tester pass; same pattern as G10 + B3 hotfix closures). Total LOC delta across the phase: +500 / -120 backend, +50 / -10 FE, +21 lockdown tests across 3 new files (10 + 8 + 3), 7 existing tests updated. Iteration budget: 2/3 used.
-- **Counts after Phase 4 close:** ✅31 / 🟡0 / ❌4 / 🚧2 across the original 37 QA items + Bug #30 + Phase 4 (Phase 4 is tracked as its own row in Section 4, not counted in the 37-item QA total).
+- **Written:** 2026-06-04T13:35:00Z (Track A Phase 5 closure — Work Studio document lifecycle restored in a single coherent dispatch; 14/14 default lockdowns + 55/55 Phase 3+4 regression = 69/69 PASS; live-preview FE smoke confirmed zero webpack errors; raw-curl evidence on W3 captured at /tmp/phase5_w3_repro_v2.py).
+- **Agent:** track-a-phase-5-closure.
+- **Mode:** Code + memo + state. 11 scope items shipped via 6 backend file changes (1 new endpoint per W2/W5/save-draft + delete + additive fields + RAG flip + inline=true) and 8 frontend file changes (2 new components — LoadingChecklistModal + DraftingDrawer — and 6 surgical edits to existing files). All 5 user-approved tightenings honoured with file:line citations in the sprint memo. The W3 hypothesis was REVISED based on curl evidence — not silently swapped. The "deferred to Phase 5" anti-pattern from Phase 4 iter-1 was NOT repeated; Phase 6 deferral surfaces all carry `data-phase6="true"` with Phase-6 tooltips.
+- **Phase 5 close-out summary:** 11 scope items, 1 dispatch, all 5 tightenings honoured. Total LOC delta across the phase: +400 / -10 backend, +780 / -20 FE, +15 lockdown tests in 1 new file. Iteration budget: 1/3 used. RAG threshold flipped 80→75 across 3 files (backend rag_band, FE ragBand, FE chip palette comments) — historical rows still render, just shift bands at the 75-79 boundary.
 
 ---
 
-## Section 8 — Cumulative Health Snapshot (2026-06-04 12:05Z final close)
+## Section 8 — Cumulative Health Snapshot (2026-06-04 13:35Z close)
 
-- ✅ **10 phases shipped + verified**: Track A Phase 1 + 2 + 3 + 4, Track B B1 (incl. B1b) + B2 + B3 + B4 + B5.
+- ✅ **11 phases shipped + verified**: Track A Phase 1 + 2 + 3 + 4 + 5, Track B B1 (incl. B1b) + B2 + B3 + B4 + B5.
 - 🟡 **0 phases pending tester.**
-- ❌ **4 ❌ open items** across the 3 QA docs (down from 5 — original Phase 4 row now ✅).
+- ❌ **4 ❌ open items** across the 3 QA docs (unchanged — Phase 5 closes Work Studio QA-doc surfaces but parked items remain backlog).
 - 🚧 **2 USER-BLOCKED items unchanged:** SendGrid Inbound Parse webhook config (TM3), Google GCP OAuth creds (G2).
-- ✅ **v1 byte-identical guard intact** (2/2 across all 10 phases — `test_solva_v1_unchanged.py` green at every dispatch close).
-- ✅ **Phase 4 lockdown sweep 55/55 PASS** (10 forecaster tuning + 8 versioning + multi + 3 iter-2 corrective + 7 engagement revival + 10 Phase 3 prompt-fix regression + 15 Phase 3 narration regression + 2 v1 guard).
-- ✅ **Phase 4 raw-curl LIVE PREVIEW evidence:** J21 r²=0.9999 (real-LLM), J23 empty-append + idempotency, J24 r²=0.0052 + low-signal flag fires.
-- ✅ **Phase 5 deprecation flags locked in** Section 4 (Phase 4 row): `analyses.narration` + `analyses.notes` + `analyses.notes_updated_at` BC mirrors scheduled for Phase-5 removal after FE migration to `runs[-1]` + `notes_history[-1]`.
+- ✅ **v1 byte-identical guard intact** (2/2 across all 11 phases — `test_solva_v1_unchanged.py` green at every dispatch close).
+- ✅ **Phase 5 lockdown sweep 14/14 PASS** (+ 1 integration-marked deselected by default).
+- ✅ **Aggregate regression sweep 69/69 PASS** (Phase 5 + Phase 4 + Phase 3 + v1 guard + engagement revival).
+- ✅ **Phase 5 raw-curl LIVE PREVIEW evidence:** W3 reproduced + fixed (`/tmp/phase5_w3_repro_v2.py`), FE smoke (`/tmp/phase5_smoke2.png`) shows zero webpack overlay errors and Work Studio page rendering cleanly.
+- ✅ **Phase 6 deferral surfaces flagged** in Section 4: Edit toggle / Inline-edit indicator / Revise-with-AI button all stubbed with `data-phase6="true"` + Phase 6 tooltips; PDF docs permanently exclude Revise-with-AI.
+- ✅ **Phase 5 deprecation flags carry over to Phase 6** (from Phase 4): `analyses.narration` + `analyses.notes` + `analyses.notes_updated_at` BC mirrors scheduled for Phase-6 removal after FE migration.
 - ✅ **Voice-lint clean** across customer-copy surfaces.
-- ✅ **ESLint clean** on every file touched during Phase 4.
-- ✅ **Ruff clean** on all 4 backend files touched during iter-2.
+- ✅ **ESLint clean** on every file touched during Phase 5.
+- ✅ **Ruff clean** on all 6 backend files touched during Phase 5.
 
 ---
 
-**Paused per orchestrator instruction.** NOT auto-starting any backlog hygiene pass. NOT auto-starting the per-source autopick FE table (the iter-3 enhancement proposed in the last finish summary is **declined as gold-plating** per user direction — will only be picked up if explicitly requested in a future dispatch). User decides next dispatch.
+**Paused per orchestrator instruction.** NOT auto-starting any backlog hygiene pass. User decides next dispatch.

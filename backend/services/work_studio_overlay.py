@@ -5,7 +5,7 @@ Single service module that owns:
   · lifecycle state-machine transitions on `work_studio_exports`;
   · version-snapshot reads/writes on `work_studio_artefact_versions`;
   · structured-content normalisation;
-  · RAG threshold helper (≥80 / 50-79 / <50);
+  · RAG threshold helper (≥75 / 50-74 / <50; Phase 5 spec — was ≥80 / 50-79 / <50);
   · source-doc allowlist enforcement for AI Revision;
   · idempotent migration (called at app startup AND by tests).
 
@@ -29,17 +29,22 @@ ALLOWED_LIFECYCLE: Tuple[LifecycleState, ...] = ("draft", "in_review", "committe
 LEGACY_COMMITTED_DEFAULT: LifecycleState = "committed"
 
 
-# ── RAG threshold helper (Q4 decision 2026-05-18) ──────────────────
+# ── RAG threshold helper (Phase 5 2026-06-04 spec — flipped from
+#    the Chunk 8 80/50 thresholds to the QA-doc-mandated 75/50.) ────
 def rag_band(pct: Optional[int]) -> Literal["green", "amber", "red", "unrated"]:
-    """≥80 green · 50-79 amber · <50 red · None → unrated.
+    """≥75 green · 50-74 amber · <50 red · None → unrated.
 
     Used identically on the overlay intelligence card accent border,
     per-section breakdown in the Intelligence modal, and any sibling
     document-card surface that re-reads the same confidence_pct.
+
+    Track A Phase 5 (2026-06-04): the previous 80/50 thresholds
+    (Q4 decision 2026-05-18) are superseded by the QA doc verbatim
+    spec ("above 75% neutral, 50-75% amber, below 50% red").
     """
     if pct is None:
         return "unrated"
-    if pct >= 80:
+    if pct >= 75:
         return "green"
     if pct >= 50:
         return "amber"

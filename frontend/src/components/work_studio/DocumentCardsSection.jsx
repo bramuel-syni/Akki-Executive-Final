@@ -7,9 +7,10 @@
  *   • Status badge (QA-037) — Draft / In Review / Committed
  *   • Lock icon overlay (QA-038) — ONLY when lifecycle_state==="committed"
  *   • Confidence chip (QA-039) — "Confidence X%" with RAG colour
- *     (uses Chunk-8 `confidence_band` from the backend listing endpoint
- *     — 80/50 thresholds; QA-039 verbatim 75/50 documented as divergence
- *     in CHUNK_16_STATE.md §3)
+ *     (uses `confidence_band` from the backend listing endpoint —
+ *     Phase 5 (2026-06-04) flipped to the QA-doc 75/50 thresholds.
+ *     The Chunk 16 80/50 divergence callout previously documented in
+ *     CHUNK_16_STATE.md §3 is now resolved by the threshold flip.)
  *   • Persistent download icon (QA-040) — visible on every card.
  *
  * Reads from `GET /api/contexts/{cid}/work-studio/documents` (the
@@ -25,12 +26,17 @@
  *   - NO new third-party libraries.
  */
 import React, { useEffect, useState, useCallback } from "react";
-import { Download, Lock, FileText, Loader2 } from "lucide-react";
-import { api, apiErrorMessage } from "@/lib/api";
+import { Download, Lock, FileText, Loader2, MoreHorizontal, Share2, Trash2 } from "lucide-react";
+import { api, apiErrorMessage, resolveBackendOrigin } from "@/lib/api";
 import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-
-import { resolveBackendOrigin } from "@/lib/api";
 // QA-2026-05-16-037 (Chunk 16) — verbatim badge taxonomy per the
 // dispatch's locked decision: draft → Draft (neutral) · in_review →
 // In Review (amber) · committed → Committed (dark filled). The
@@ -53,10 +59,12 @@ const BADGES = {
   },
 };
 
-// QA-2026-05-16-039 (Chunk 16) — confidence chip palette. Mirrors the
-// `rag_band` helper from `services/work_studio_overlay.py` (80/50
-// thresholds, Chunk 8 decision). The QA-039 verbatim spec uses 75/50
-// — divergence documented in CHUNK_16_STATE.md §3.
+// QA-2026-05-16-039 (Chunk 16) — confidence chip palette. Phase 5
+// (2026-06-04) flipped both backend `services/work_studio_overlay.py`
+// and frontend `overlay/DocumentOverlay.jsx` from 80/50 to the
+// QA-doc-verbatim 75/50 thresholds. The chip palette below is
+// band-keyed so no numeric change needed here — the backend now
+// emits the correct band on each row.
 const CONFIDENCE_CHIP_PALETTE = {
   green:   "bg-emerald-50 text-emerald-800 border-emerald-200",
   amber:   "bg-amber-50 text-amber-800 border-amber-200",
@@ -74,12 +82,56 @@ export default function DocumentCardsSection({ contextId, onOpenDocument }) {
   useEffect(() => {
     if (!contextId) return undefined;
     let cancelled = false;
-    setLoading(true); setError(null);
-    api.get(`/contexts/${contextId}/work-studio/documents?limit=20`)
-      .then((r) => { if (!cancelled) setItems(r.data?.items || []); })
-      .catch((e) => { if (!cancelled) setError(apiErrorMessage(e)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    const refetch = () => {
+      setLoading(true); setError(null);
+      api.get(`/contexts/${contextId}/work-studio/documents?limit=20`)
+        .then((r) => { if (!cancelled) setItems(r.data?.items || []); })
+        .catch((e) => { if (!cancelled) setError(apiErrorMessage(e)); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    };
+    refetch();
+    // Track A Phase 5 (2026-06-04, W2 + W4) — listen for the
+    // `akki:document-card-pulse` event so newly-compiled / enhanced /
+    // composed docs auto-appear at the top without a page reload.
+    // The event is dispatched from CompilationWizard's completion
+    // handler, ExportModal's success modal, and the Drafting Drawer's
+    // Save handler.
+    const onPulse = () => refetch();
+    if (typeof window !== "undefined") {
+      window.addEventListener("akki:document-card-pulse", onPulse);
+    }
+    return () => {
+      cancelled = true;
+      if (typeof window !== "undefined") {
+        window.removeEventListener("akki:document-card-pulse", onPulse);
+      }
+    };
+  }, [contextId]);
+
+  const onShare = useCallback((item) => {
+    // Track A Phase 5 — emit the Share modal open event handled by the
+    // existing share-document Sheet at page level. The G7 dispatch's
+    // `recipient_emails` payload schema is preserved.
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent("akki:open-share-modal", {
+      detail: { artefactId: item.id, kind: item.export_kind || "document",
+                title: item.title || "Untitled document" },
+    }));
+  }, []);
+
+  const onDelete = useCallback(async (item) => {
+    // Phase 5 — Draft-only. Hard delete via the existing
+    // `/work-studio/documents/{aid}/discard-draft` endpoint
+    // (work_studio_overlay.py — discard returns the row to no-op
+    // state). If the endpoint isn't reachable, surface the error.
+    if (!window.confirm(`Delete the draft "${item.title || "Untitled draft"}"?`)) return;
+    try {
+      await api.delete(`/contexts/${contextId}/work-studio/documents/${item.id}`);
+      setItems((xs) => xs.filter((x) => x.id !== item.id));
+      toast.success("Draft deleted.");
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    }
   }, [contextId]);
 
   const onDownload = useCallback(async (item) => {
@@ -158,6 +210,8 @@ export default function DocumentCardsSection({ contextId, onOpenDocument }) {
             item={it}
             onOpen={() => onOpenDocument && onOpenDocument(it.id, it.export_kind)}
             onDownload={() => onDownload(it)}
+            onShare={() => onShare(it)}
+            onDelete={() => onDelete(it)}
             downloading={downloading === it.id}
           />
         ))}
@@ -167,7 +221,7 @@ export default function DocumentCardsSection({ contextId, onOpenDocument }) {
 }
 
 
-function DocumentCardRow({ item, onOpen, onDownload, downloading }) {
+function DocumentCardRow({ item, onOpen, onDownload, onShare, onDelete, downloading }) {
   const ls = (item.lifecycle_state || "draft").toLowerCase();
   const badge = BADGES[ls] || BADGES.draft;
   const isCommitted = ls === "committed";
@@ -175,11 +229,18 @@ function DocumentCardRow({ item, onOpen, onDownload, downloading }) {
   const conf = typeof intel.confidence_pct === "number" ? intel.confidence_pct : null;
   const band = item.confidence_band || "unrated";
   const confClassName = CONFIDENCE_CHIP_PALETTE[band] || CONFIDENCE_CHIP_PALETTE.unrated;
+  // Track A Phase 5 (2026-06-04, fig 53 row 2) — additive fields.
+  const sourceCount = typeof item.source_count === "number" ? item.source_count : null;
+  const contribCount = typeof item.contributor_count === "number" ? item.contributor_count : null;
+  const akkiGenerated = item.akki_generated === true;
+  // Phase 5 (fig 53) — only Draft cards expose a Delete action.
+  const canDelete = ls === "draft";
 
   return (
     <li
       data-testid={`ws-document-card-${item.id}`}
       data-lifecycle={ls}
+      data-akki-generated={akkiGenerated}
       className="group relative flex items-center gap-3 border border-[var(--rule)] bg-white px-3 py-3 rounded-sm hover:border-slate-300 transition-colors"
     >
       {/* Document icon + QA-038 lock overlay */}
@@ -197,7 +258,7 @@ function DocumentCardRow({ item, onOpen, onDownload, downloading }) {
         )}
       </div>
 
-      {/* Body — name + meta row + (optional) confidence row */}
+      {/* Body — name + meta row 1 (date/conf) + (Phase 5) meta row 2 */}
       <button
         type="button"
         onClick={onOpen}
@@ -240,6 +301,41 @@ function DocumentCardRow({ item, onOpen, onDownload, downloading }) {
             </>
           )}
         </div>
+        {/* Track A Phase 5 (2026-06-04, fig 53 row 2) — sources count,
+            contributors count, Akki Generated badge. Hidden entirely
+            for cards that lack any of the additive fields (legacy
+            rows). */}
+        {(sourceCount !== null || contribCount !== null || akkiGenerated) && (
+          <div
+            data-testid={`ws-document-card-meta-row2-${item.id}`}
+            className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-[10.5px] text-[var(--muted)] font-mono uppercase tracking-[0.08em]"
+          >
+            {sourceCount !== null && (
+              <span data-testid={`ws-document-card-sources-${item.id}`}>
+                {sourceCount} source{sourceCount === 1 ? "" : "s"}
+              </span>
+            )}
+            {contribCount !== null && (
+              <>
+                {sourceCount !== null && <span>·</span>}
+                <span data-testid={`ws-document-card-contribs-${item.id}`}>
+                  {contribCount} contributor{contribCount === 1 ? "" : "s"}
+                </span>
+              </>
+            )}
+            {akkiGenerated && (
+              <>
+                {(sourceCount !== null || contribCount !== null) && <span>·</span>}
+                <span
+                  data-testid={`ws-document-card-akki-generated-${item.id}`}
+                  className="inline-flex items-center rounded-sm bg-ned-purple/10 text-ned-purple px-1 py-0.5 text-[9.5px] not-italic"
+                >
+                  Akki Generated
+                </span>
+              </>
+            )}
+          </div>
+        )}
       </button>
 
       {/* QA-040 — persistent download icon, visible regardless of lifecycle_state */}
@@ -256,6 +352,52 @@ function DocumentCardRow({ item, onOpen, onDownload, downloading }) {
           ? <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />
           : <Download className="h-3.5 w-3.5 text-slate-500" />}
       </button>
+
+      {/* Track A Phase 5 (2026-06-04, fig 53) — kebab menu.
+          Download / Share / (if Draft) Delete. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            data-testid={`ws-document-card-kebab-${item.id}`}
+            className="shrink-0 inline-flex items-center justify-center h-8 w-8 rounded-sm hover:bg-slate-100 transition-colors"
+            aria-label="More actions"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5 text-slate-500" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className="w-[180px] text-[12.5px]"
+          data-testid={`ws-document-card-kebab-menu-${item.id}`}
+        >
+          <DropdownMenuItem
+            onClick={onDownload}
+            disabled={downloading}
+            data-testid={`ws-document-card-kebab-download-${item.id}`}
+          >
+            <Download className="h-3.5 w-3.5 mr-2" />Download
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={onShare}
+            data-testid={`ws-document-card-kebab-share-${item.id}`}
+          >
+            <Share2 className="h-3.5 w-3.5 mr-2" />Share
+          </DropdownMenuItem>
+          {canDelete && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={onDelete}
+                className="text-red-600 focus:text-red-700"
+                data-testid={`ws-document-card-kebab-delete-${item.id}`}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-2" />Delete draft
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </li>
   );
 }

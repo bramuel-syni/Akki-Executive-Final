@@ -123,6 +123,20 @@ export default function CreateArtefactModal({ open, onClose, kind, contextId, on
       toast.error("Pick a document or switch to Blank.");
       return;
     }
+    // Track A Phase 5 (2026-06-04, W6) — blank-source route hands off
+    // to the Drafting Side Drawer (W5 path) with the right format
+    // for the kind. Skips the /artefacts POST entirely; the Drafting
+    // drawer's /save-draft is what writes the work_studio_exports
+    // row on first save.
+    if (source === "blank") {
+      onClose && onClose();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("akki:open-drafting-drawer", {
+          detail: { kind, title: t },
+        }));
+      }
+      return;
+    }
     setBusy(true);
     try {
       const payload = {

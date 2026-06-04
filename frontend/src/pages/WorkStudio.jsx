@@ -50,6 +50,8 @@ import DocumentJournalRail from "@/components/work_studio/DocumentJournalRail";
 import DocumentDrawer from "@/components/documents/DocumentDrawer";
 import ObjectiveCaptureModal from "@/components/documents/ObjectiveCaptureModal";
 import CompilationWizard from "@/components/work_studio/CompilationWizard";
+import LoadingChecklistModal, { COMPILE_STEPS } from "@/components/work_studio/LoadingChecklistModal";
+import DraftingDrawer from "@/components/work_studio/DraftingDrawer";
 // Phase Z (2026-05-27, Z-slice-3) — Unified RIGHT sidebar replacing
 // the legacy `<CompilationRail>` + `<DocumentJournalRail>` twin
 // layout with the locked vertical card stack.
@@ -718,6 +720,36 @@ export default function WorkStudio() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardPreselectType, setWizardPreselectType] = useState(null);
   const [wizardPreselectSourceId, setWizardPreselectSourceId] = useState(null);
+
+  // Track A Phase 5 (2026-06-04) — Loading checklist + Drafting drawer state.
+  const [checklistOpen, setChecklistOpen] = useState(false);
+  const [checklistExportId, setChecklistExportId] = useState(null);
+  const [checklistSteps, setChecklistSteps] = useState([]);
+  const [draftingDrawerOpen, setDraftingDrawerOpen] = useState(false);
+  const [draftingDrawerKind, setDraftingDrawerKind] = useState("report");
+
+  useEffect(() => {
+    // W2 — wizard completion handoff to the checklist modal.
+    const onCompileStart = (e) => {
+      const exportId = e?.detail?.exportId;
+      if (!exportId) return;
+      setChecklistExportId(exportId);
+      setChecklistSteps(COMPILE_STEPS);
+      setChecklistOpen(true);
+    };
+    // W6 — Create Report/Deck blank → drafting drawer.
+    const onOpenDrafting = (e) => {
+      const k = e?.detail?.kind || "report";
+      setDraftingDrawerKind(k);
+      setDraftingDrawerOpen(true);
+    };
+    window.addEventListener("akki:work-studio-compile-started", onCompileStart);
+    window.addEventListener("akki:open-drafting-drawer", onOpenDrafting);
+    return () => {
+      window.removeEventListener("akki:work-studio-compile-started", onCompileStart);
+      window.removeEventListener("akki:open-drafting-drawer", onOpenDrafting);
+    };
+  }, []);
   const [railRefreshKey, setRailRefreshKey] = useState(0);
 
   const fetchAggregates = useCallback(async () => {
@@ -1082,7 +1114,7 @@ export default function WorkStudio() {
                   <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
                     {aggQ
                       ? "Try clearing the search."
-                      : "Upload one via the sidebar, or compile something using the actions below."}
+                      : "Upload one via the sidebar, or compile something using the actions above."}
                   </p>
                 </div>
               }
@@ -1210,6 +1242,49 @@ export default function WorkStudio() {
           preselectArtefactType={wizardPreselectType}
           preselectSourceId={wizardPreselectSourceId}
           onCreated={() => setRailRefreshKey((k) => k + 1)}
+        />
+
+        {/* Track A Phase 5 (2026-06-04, W2) — Loading checklist modal
+            fires on compile-started → polls until status=complete →
+            auto-opens the new document via the canonical ?doc_id=
+            URL contract. */}
+        <LoadingChecklistModal
+          open={checklistOpen}
+          contextId={cid}
+          exportId={checklistExportId}
+          steps={checklistSteps}
+          onComplete={(exportId) => {
+            setChecklistOpen(false);
+            setChecklistExportId(null);
+            fetchAggregates();
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new Event("akki:document-card-pulse"));
+            }
+            // Auto-open the new card in the universal drawer.
+            const sp = new URLSearchParams(searchParams);
+            sp.set("doc_id", exportId);
+            setSearchParams(sp, { replace: false });
+          }}
+          onError={(msg) => {
+            setChecklistOpen(false);
+            setChecklistExportId(null);
+            toast.error(msg || "Compilation failed.");
+          }}
+          onClose={() => {
+            setChecklistOpen(false);
+            setChecklistExportId(null);
+          }}
+        />
+
+        {/* Track A Phase 5 (2026-06-04, W5 + W6 blank) — Drafting Drawer
+            for the "Save and start drafting" path and Create Report/
+            Deck blank route. */}
+        <DraftingDrawer
+          open={draftingDrawerOpen}
+          onClose={() => setDraftingDrawerOpen(false)}
+          contextId={cid}
+          kind={draftingDrawerKind}
+          onSaved={() => fetchAggregates()}
         />
 
         {/* Phase E.3 (2026-05-26) — Universal Document Drawer.

@@ -346,6 +346,35 @@ export default function ExportModal({ open, onClose, kind, contextId, contextNam
             <p className="text-[12.5px] text-[var(--muted)] mb-1">
               File: <span className="font-mono text-[var(--ink)]">{fileName}</span>
             </p>
+            {/* Track A Phase 5 (2026-06-04, W4) — saved-to-cards
+                breadcrumb. The export was already persisted by the
+                backend (work_studio_exports.insert_one); we just
+                surface that fact in the success modal so the user
+                doesn't perceive the file as ephemeral. */}
+            <p
+              className="text-[11.5px] text-emerald-700 mb-2"
+              data-testid="work-studio-export-saved-breadcrumb"
+            >
+              Saved to Drafts &amp; Briefs as a new document card.
+              {exportId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      window.dispatchEvent(new CustomEvent("akki:open-document-overlay", {
+                        detail: { artefactId: exportId },
+                      }));
+                      window.dispatchEvent(new Event("akki:document-card-pulse"));
+                    }
+                    onClose && onClose();
+                  }}
+                  className="ml-1.5 text-[var(--accent)] hover:text-[var(--accent-dark)] underline underline-offset-2"
+                  data-testid="work-studio-export-open-card"
+                >
+                  Open card
+                </button>
+              )}
+            </p>
             {status?.sensitivity_band && (
               <p className="text-[11.5px] text-[var(--muted)] mb-3">
                 Sensitivity band: <span className="font-mono text-[var(--ink)]">{status.sensitivity_band}</span>

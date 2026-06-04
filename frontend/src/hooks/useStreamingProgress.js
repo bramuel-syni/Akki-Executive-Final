@@ -30,6 +30,7 @@
  * detects the disconnect via `request.is_disconnected()`.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "@/lib/api";
 
 const INITIAL_STATE = {
   surface: null,
@@ -102,6 +103,21 @@ export default function useStreamingProgress() {
     const tok = (typeof window !== "undefined")
       ? window.localStorage.getItem("akki_access_token")
       : null;
+    // Track A Phase 5 (2026-06-04, W3 Tightening 1) — the CSRF
+    // middleware on every `/stream` endpoint rejects POSTs that lack
+    // an `X-CSRF-Token` header with 403. The non-stream paths get
+    // their CSRF header from the `api` axios interceptor; this hook
+    // fetches the token explicitly because we use raw `fetch()` for
+    // ReadableStream support (axios can't expose it). Repro evidence:
+    // /tmp/phase5_w3_repro_v2.py Case D — POST /enhance/minutes/stream
+    // returned 403 {"code":"csrf_token_missing"} before this fix.
+    let csrfToken = null;
+    if (method !== "GET" && method !== "HEAD") {
+      try {
+        const csrfRes = await api.get("/csrf");
+        csrfToken = csrfRes?.data?.csrf_token || null;
+      } catch { /* CSRF fetch best-effort; the request will surface the 403 if missing */ }
+    }
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -128,6 +144,7 @@ export default function useStreamingProgress() {
           Accept: "text/event-stream",
           ...contentTypeHeader,
           ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
+          ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
           ...headers,
         },
         body: requestBody,

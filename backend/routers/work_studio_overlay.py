@@ -246,6 +246,41 @@ async def commit_document(
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Track A Phase 5 (2026-06-04) — DELETE Draft-only
+# Honours the fig 53 kebab menu's "Delete draft" affordance. Non-Draft
+# states refuse with 409 to preserve the existing commit-and-lock
+# semantics.
+# ─────────────────────────────────────────────────────────────────────
+@router.delete("/contexts/{context_id}/work-studio/documents/{artefact_id}")
+async def delete_draft_document(
+    context_id: str,
+    artefact_id: str,
+    ctx=Depends(require_context_membership()),
+):
+    row = await db.work_studio_exports.find_one(
+        {"id": artefact_id, "context_id": context_id},
+        {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Document not found")
+    state = (row.get("lifecycle_state") or "").lower()
+    if state != "draft":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only Draft documents can be deleted (current: {state}).",
+        )
+    if row.get("account_id") != ctx["account"]["id"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the draft owner can delete it.",
+        )
+    await db.work_studio_exports.delete_one(
+        {"id": artefact_id, "context_id": context_id},
+    )
+    return {"id": artefact_id, "deleted": True}
+
+
+# ─────────────────────────────────────────────────────────────────────
 # POST /create-new-version — clone Committed → new Draft row
 # ─────────────────────────────────────────────────────────────────────
 @router.post("/contexts/{context_id}/work-studio/documents/{artefact_id}/create-new-version")

@@ -693,6 +693,73 @@ async def list_draft_documents(
     return [sanitize_doc(d) for d in docs]
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Track A Phase 5 (2026-06-04) — POST /documents/manual-create
+#
+# FIX for W5 (fig 64 — "Draft Document 405 Method Not Allowed"). The
+# `WorkStudio.jsx` ObjectiveCaptureModal calls this endpoint to create
+# a blank `akki_generated` draft document carrying a {goal, context}
+# objective. Pre-Phase-5 the endpoint did not exist — FastAPI returned
+# 405 because the path partially matched the `POST /contexts/{cid}/
+# documents` multipart-upload handler at line 357. Now: JSON body, no
+# file, ClamAV skipped (no bytes), category enforcement skipped.
+# Returns the freshly-created document so the FE can immediately open
+# the drawer via `?doc_id=...`.
+# ─────────────────────────────────────────────────────────────────────
+class _ManualCreateIn(BaseModel):
+    name: str = Field(default="Untitled draft", max_length=300)
+    body: str = Field(default="", max_length=200_000)
+    state: str = Field(default="draft")  # draft | active
+    origin: str = Field(default="akki_generated")
+    objective: Optional[Dict[str, Any]] = None
+
+
+@router.post("/contexts/{context_id}/documents/manual-create")
+async def manual_create_document(
+    context_id: str,
+    body: _ManualCreateIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    doc_id = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": doc_id,
+        "context_id": context_id,
+        "account_id": ctx["account"]["id"],
+        "name": body.name.strip() or "Untitled draft",
+        "filename": f"{body.name.strip() or 'Untitled draft'}.txt",
+        "ext": ".txt",
+        "size_bytes": len((body.body or "").encode("utf-8")),
+        "mime_type": "text/plain",
+        "extracted_text": body.body or "",
+        "state": body.state or "draft",
+        "origin": body.origin or "akki_generated",
+        "status": "active",
+        "category": None,
+        "objective": body.objective or None,
+        "notes": "",
+        "notes_updated_at": None,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        # Track A Phase 5 — the FE expects `body` echoed back when the
+        # drawer opens via `?doc_id=`. We persist as `extracted_text`
+        # (the canonical body field) and return `body` for compatibility.
+    }
+    await db.documents.insert_one(doc)
+    try:
+        await write_audit(
+            context_id, ctx["account"]["id"],
+            "document.manual_create",
+            "document", doc_id,
+            {"name": doc["name"], "origin": doc["origin"], "state": doc["state"]},
+        )
+    except Exception:  # noqa: BLE001
+        # Swallow contract: audit-log failures must not block the
+        # create. The route is otherwise side-effect-only writes.
+        pass
+    return sanitize_doc(doc)
+
+
 # Phase E.2 (2026-05-26) — Unified Recent Activity feed for the new
 # Work Studio right-rail card. Reads `audit_log` events scoped to the
 # user's active context. Returns a row-projection per event:

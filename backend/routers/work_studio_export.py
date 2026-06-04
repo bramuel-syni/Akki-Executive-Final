@@ -1449,6 +1449,14 @@ async def start_export(
         "error": None,
         "refusal_text": None,
         "chat_audit_id": None,
+        # Track A Phase 5 (2026-06-04) — additive fields for the
+        # fig-53 card row 2 (sources count · contributors count ·
+        # Akki Generated badge). source_count for a fresh export is
+        # 0 (sources are not bound until a compilation chains in;
+        # the /compilations/{id}/start path overrides this on insert).
+        "source_count": 0,
+        "contributor_count": 1,
+        "akki_generated": True,
     }
     await db.work_studio_exports.insert_one(row)
 
@@ -1777,6 +1785,7 @@ async def download_export(
     context_id: str,
     export_id: str,
     token: str,
+    inline: bool = False,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
     row = await db.work_studio_exports.find_one(
@@ -1823,11 +1832,17 @@ async def download_export(
         "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "pdf":  "application/pdf",
     }
+    # Track A Phase 5 (2026-06-04, Tightening 4) — `?inline=true` makes
+    # the response renderable inside an `<iframe>` for the Document
+    # Review Side Drawer's PDF surface. The default (False) keeps the
+    # legacy `attachment` disposition for the Download button. The
+    # media-type stays `application/pdf` regardless of disposition.
+    disposition = "inline" if inline else "attachment"
     return Response(
         content=data,
         media_type=media_types.get(fmt, "application/octet-stream"),
         headers={
-            "Content-Disposition": f'attachment; filename="{row["file_name"]}"',
+            "Content-Disposition": f'{disposition}; filename="{row["file_name"]}"',
             "X-AKKI-Sensitivity-Band": row.get("sensitivity_band") or "INTERNAL",
             "Cache-Control": "private, no-store",
         },
@@ -1896,6 +1911,12 @@ async def start_enhance(
         "error": None,
         "refusal_text": None,
         "chat_audit_id": None,
+        # Track A Phase 5 (2026-06-04) — fig-53 card row 2 fields.
+        # Enhance always has exactly one source (the file or the
+        # source_artefact_id) and is solo-authored.
+        "source_count": 1,
+        "contributor_count": 1,
+        "akki_generated": True,
     }
     await db.work_studio_exports.insert_one(row)
 
@@ -1993,4 +2014,119 @@ async def start_enhance(
         "output_format": fmt,
         "source": "enhance",
         "created_at": created_at,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Track A Phase 5 (2026-06-04) — W5 Drafting Drawer backing endpoint
+#
+# Powers the [Save] CTA on the Drafting Side Drawer (W5 + W6 blank
+# routes). Persists a `work_studio_exports` row with lifecycle_state=
+# "draft", source="draft", akki_generated=true. Subsequent saves with
+# the same `draft_session_id` update the existing row in place; this
+# avoids the race where two near-simultaneous autosave debounces fire
+# on first-open and create two rows (Tightening 5).
+#
+# Note: this endpoint does NOT render a file — the draft body lives in
+# `structured_content`. The Render endpoint at work_studio_render.py
+# already handles structured_content → HTML conversion for the drawer.
+# File materialisation (DOCX/PPTX/PDF) happens on Enhance → at which
+# point the row flips to lifecycle_state="in_review" with source=
+# "enhance" via the existing enhance pipeline.
+# ─────────────────────────────────────────────────────────────────────
+class _SaveDraftIn(BaseModel):
+    draft_session_id: str = Field(..., min_length=8, max_length=64)
+    title: str = Field(default="Untitled draft", max_length=300)
+    structured_content: Dict[str, Any] = Field(default_factory=dict)
+    kind: Literal["report", "deck", "minutes", "committee_pack", "briefing", "board_pack"] = "report"
+    document_id: Optional[str] = None  # link back to the source document (W5 path)
+
+
+@router.post("/contexts/{context_id}/work-studio/documents/save-draft")
+async def save_draft(
+    context_id: str,
+    body: _SaveDraftIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    kind = body.kind
+    # Format follows the kind: report/minutes/committee_pack/briefing →
+    # docx; deck/board_pack → pptx.
+    fmt = "pptx" if kind in ("deck", "board_pack") else "docx"
+
+    # Idempotency (Tightening 5) — keyed on
+    # `(context_id, account_id, draft_session_id)`. Two near-simultaneous
+    # POSTs with the same draft_session_id collapse to ONE row.
+    existing = await db.work_studio_exports.find_one(
+        {
+            "context_id": context_id,
+            "account_id": ctx["account"]["id"],
+            "draft_session_id": body.draft_session_id,
+        },
+        {"_id": 0},
+    )
+    now_iso = iso(now())
+    if existing:
+        await db.work_studio_exports.update_one(
+            {"id": existing["id"]},
+            {"$set": {
+                "document_title":     body.title.strip() or "Untitled draft",
+                "structured_content": body.structured_content,
+                "updated_at":         now_iso,
+            }},
+        )
+        refreshed = await db.work_studio_exports.find_one({"id": existing["id"]}, {"_id": 0})
+        return {
+            "export_id":          refreshed["id"],
+            "draft_session_id":   body.draft_session_id,
+            "lifecycle_state":    refreshed.get("lifecycle_state", "draft"),
+            "updated_at":         now_iso,
+            "idempotent_update":  True,
+        }
+
+    export_id = str(uuid.uuid4())
+    row = {
+        "id": export_id,
+        "context_id": context_id,
+        "account_id": ctx["account"]["id"],
+        "kind": kind,
+        "output_format": fmt,
+        "status": "complete",          # draft is its own terminal state
+        "lifecycle_state": "draft",
+        "source": "draft",
+        "draft_session_id": body.draft_session_id,
+        "source_document_id": body.document_id,
+        "document_title": body.title.strip() or "Untitled draft",
+        "structured_content": body.structured_content,
+        "file_name": None,
+        "file_path": None,
+        "sha256": None,
+        "sensitivity_band": None,
+        "error": None,
+        "refusal_text": None,
+        "chat_audit_id": None,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "completed_at": now_iso,
+        # Phase 5 additive fields.
+        "source_count": 1 if body.document_id else 0,
+        "contributor_count": 1,
+        "akki_generated": True,
+    }
+    await db.work_studio_exports.insert_one(row)
+    try:
+        await write_audit(
+            account_id=ctx["account"]["id"], context_id=context_id,
+            action="work_studio.draft.saved", target_id=export_id,
+            metadata={"draft_session_id": body.draft_session_id, "kind": kind},
+        )
+    except Exception:  # noqa: BLE001
+        # Swallow contract: audit-log failures must not block the save.
+        pass
+
+    return {
+        "export_id":         export_id,
+        "draft_session_id":  body.draft_session_id,
+        "lifecycle_state":   "draft",
+        "updated_at":        now_iso,
+        "idempotent_update": False,
     }
