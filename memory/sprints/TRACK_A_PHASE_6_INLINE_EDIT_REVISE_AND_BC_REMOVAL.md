@@ -182,3 +182,32 @@ Plus the file-level docstring at `test_track_a_phase4_versioning_multi.py:24-27`
 - Iter-0 step 0 stop-and-surface: 1 of 1 (confidence recompute deferred + BC test inventory).
 - Iter budget: 1 of 3 used.
 - 88/88 lockdown assertions PASS.
+
+---
+
+## What we deferred and why (for the next agent — read before reopening)
+
+### A — Confidence recompute on commit (DEFERRED to a future dedicated phase)
+
+The user's Phase 6 brief listed "Confidence score regenerated on save (real LLM call)" as an explicit DOES-ship item. Iter-0 step 0 archaeology then surfaced that the assumption underlying that item was wrong:
+
+- **No production runtime scorer exists.** `intelligence_report.confidence_pct` is **only ever written** by `backend/scripts/seed_chunks.py:64-160` (the `_intel_for_kind` function) which emits static demo seed payloads (committee_pack=86, report=72, deck=48, etc.).
+- **Real Work Studio documents** compiled via the Enhance/Compile flow at `routers/work_studio_export.py:1041` start with `confidence_pct: None`. There's nothing to "regenerate" — there was never anything to compute in the first place.
+- **`work_studio_overlay.py:rag_band()`** at `services/work_studio_overlay.py:34-51` handles the `None` case by returning `"unrated"`, which means the UI gracefully no-ops on the missing field. There is no user-visible "wrong" confidence today — there's no confidence at all (other than seeded demo rows).
+
+The user explicitly approved option A=(b) "defer confidence recompute to a future dedicated phase" after this archaeology was surfaced. The next agent should NOT re-open this question without doing the same ground-truth read. The deferred path is logged in `MASTER_STATE.md` Section 5 under "Future dedicated phase" with the rationale for why it's not gold-plating (real product gap that deserves its own Pre-Read with rubric design, scoring axes, integration test budget, and real-LLM call cost model).
+
+**If the next agent picks up Confidence Scoring Pre-Read, they need to answer (in this order):**
+1. Is the scorer purely document-content-based or also source-doc-grounded? (Probably grounded — would mirror `/revise`'s source-doc allowlist enforcement.)
+2. What's the rubric? (Source-coverage, citation density, internal consistency, gap clarity — but TBD by user / product, not by the agent.)
+3. When does it trigger? (Phase 6 Pre-Read recommended commit-only for cost; that recommendation still stands.)
+4. Where does it cache? (Likely `intelligence_report.confidence_pct` field already on the row, with a new `confidence_recomputed_at` + `confidence_rationale` audit pair — additive.)
+5. How is the prompt audit-logged? (Shield call with new `purpose="work_studio.document.confidence_recompute"` — needs review-board sign-off per Shield convention.)
+
+### B — `useFileInputResetOnInvoke` cross-cutting hook (DECLINED — gold-plating)
+
+Logged in MASTER_STATE Section 5 "Potential cross-cutting hygiene (DECLINED — paper trail only)". Same pattern as the per-source autopick table (Phase 4) and minutes-template polish (Phase 5). No surface today has the bug it would prevent.
+
+### C — `data-testid` presence smoke test on every interactive element (DECLINED — gold-plating)
+
+Logged in MASTER_STATE Section 5 same subsection. Same gold-plating pattern. Discipline is already applied per surface; no missing-testid bug has surfaced.
