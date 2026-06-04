@@ -292,6 +292,12 @@ Status legend:
 - Prod env: `POSTMARK_WEBHOOK_SECRET` decision — keep env var OR request follow-up to remove boot-guard at `server.py:573`
 - Optional prod cleanup: `python3 /app/backend/migrations/cleanup_postmark_fixtures.py`
 
+### Potential cross-cutting hygiene (DECLINED — paper trail only)
+
+Recorded for paper trail per user direction. NOT auto-scoped. Same pattern as Phase 4 per-source autopick table + Phase 5 minutes-template polish — declined as gold-plating.
+
+- **`useFileInputResetOnInvoke` cross-cutting hook** (BUG-ANL-002 follow-up, proposed 2026-06-04, **DECLINED** same dispatch). Would wrap `ref.click()` to guarantee `input.value=""` before every file picker invocation across the entire FE. Current state: `AnalyzeJournal.jsx` fixed via `finally` block; `Documents/UploadModal` already clears on close. No further surfaces have the bug. The hook would close a class of bugs but no other surface has the symptom today.
+
 ### Section 5b — New open bugs (logged, NOT auto-fixed)
 
 - **BUG-ANL-002 — Analyze upload picker silent-failure on file selection** → ✅ COMPLETE 2026-06-04T21:30:00Z (single-dispatch surgical fix, iter 1 of 1).
