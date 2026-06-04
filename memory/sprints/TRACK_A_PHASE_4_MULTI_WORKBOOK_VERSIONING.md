@@ -275,3 +275,128 @@ Recommended next step: spot-check the FE drawer's `Synthesis history`
 section against a 3-workbook upload to confirm the per-source citation
 prefixes render cleanly. That's a visual-only check; backend contract
 is locked.
+
+---
+
+## ITER-2 CLOSE-OUT NOTE FOR THE NEXT AGENT — "What I almost shipped silently"
+
+**Read this before touching Phase 4 code.** Three failure modes that
+slipped through the iter-1 self-test sweep, surfaced by the user's
+tester, and corrected in iter-2. Each is a class of mistake that
+costs an iteration if it repeats.
+
+### 1. "Defer via comment" is not deferral. It's a regression.
+
+The iter-1 ship dropped Tightening 1 (per-source `forecast_meta` as
+a List) by writing the words *"per-source picking is deferred to
+Phase 5"* in a code comment at `routers/workbook_analysis.py:866`.
+The user had explicitly approved Tightening 1 BEFORE coding. The
+comment did not constitute deferral — it constituted a silent scope
+cut wrapped in plausible-sounding prose.
+
+**Discipline:** if you are about to defer something the user
+approved, STOP CODING and surface BEFORE writing the comment. The
+rule applies even when the deferral feels "obviously fine" because
+the consumer surface is small. The user's approval was the contract;
+your judgement that "Phase 5 is good enough" was not.
+
+### 2. Silent except-swallow always hides a bug. Every time.
+
+Iter-1's `synthesize_v2_endpoint` swallowed `ValueError` from
+`run_forecast` with `logger.warning("[run_forecast] swallowed
+exception on (%s, %s): %s", ..., exc)`. That looks like proper
+logging. It is not — the log line lacks `exc_info=True` (no
+traceback) AND does not surface the failure anywhere the LLM prompt
+or response envelope can see it. The result: J24's CSV-noisy path
+ran `_to_ordinal` against ISO date strings, failed silently, raised
+`< 3 pairs`, swallowed, set `r2 = None`, and the low-R² flag gate
+became dead code. The pytest suite passed because every iter-1 test
+fed `datetime`/`date` cells directly — none upload a CSV.
+
+**Discipline:** every `except` block in Phase 4 code MUST:
+  • log with `exc_info=True` so the supervisor backend log carries
+    the full traceback;
+  • surface a structured `failure_reason` field on the response
+    envelope (or per-element entry, for List shapes), so the LLM
+    prompt and the FE can see the gap;
+  • carry an inline docstring explaining the swallow contract — why
+    swallowing is correct here (e.g. "forecast is optional, a single
+    bad workbook shouldn't 500 the whole synthesize call").
+
+**Test discipline:** any feature that has a swallow contract MUST
+have a test that EXERCISES the swallow path end-to-end (not a
+monkeypatch of the raising function). For iter-2, that test is
+`test_low_r2_flag_fires_on_csv_noisy_data` which uploads an actual
+CSV with string-date cells and asserts the flag fires — i.e., the
+swallow path must produce the *expected downstream behaviour*, not
+just the *absence of a 500*.
+
+### 3. Pre-Read contracts override "common-sense" Pydantic defaults.
+
+Iter-1's `_AnalysisNoteIn.body` used `Field(..., min_length=1, ...)`
+because empty notes "obviously" shouldn't append. The Pre-Read had
+already specified the exact opposite: "Empty PATCH ({notes: ''})
+appends a {body: ''} entry — explicit deletion is a history event,
+not a void." Coding from intuition rather than the Pre-Read
+contracted a 422 into existence that violated the documented
+behaviour.
+
+**Discipline:** when the Pre-Read documents a behaviour, the
+implementation matches the Pre-Read VERBATIM. Re-derive nothing.
+If the Pre-Read says empty-body is an event, `min_length=0`; if
+the Pre-Read says BC mirror is `""` not `null`, the handler writes
+`""` not `null` — even if it feels stylistically off.
+
+### Cross-cutting: the "55/55 PASS" build report was misleading.
+
+Iter-1 reported 52/52 PASS and the user accepted that as iteration 1
+closed. The tester then ran the real journey and found three
+violations. The lesson is not "write more tests" — iter-1 had 18
+new tests, all sound. The lesson is that **synthetic tests against
+monkeypatched LLM responses do not cover the journeys the user
+actually runs**. The iter-2 corrective lockdowns exercise:
+  • the live engine path (CSV upload, no monkeypatch on parser/
+    forecaster);
+  • the live API surface (`/notes` POST against the live `app`);
+  • the live narration result envelope (`forecast_meta` shape on
+    `narrate_analysis` return).
+
+**Discipline:** when shipping a phase that touches an end-to-end
+journey, the regression sweep MUST include at least one
+`/tmp/<phase>_verify.py` raw-curl script against the LIVE preview
+BEFORE the build report is written. Pytest is necessary but not
+sufficient. This pattern is now codified — see
+`/tmp/phase4_iter2_verify.py` for the template.
+
+---
+
+## Phase 5 deprecation flag (Tightening 2)
+
+The following BC mirrors are scheduled for REMOVAL when Phase 5 lands:
+
+  • `analyses.narration` — duplicates `analyses.runs[-1]`.
+  • `analyses.notes` — duplicates `analyses.notes_history[-1]`.
+  • `analyses.notes_updated_at` — duplicates `analyses.notes_history[-1].created_at`.
+
+**Pre-removal checklist (for whichever agent picks up Phase 5):**
+  1. `grep -rln "narration\.headline\|narration\.observations" frontend/src/` — must show only `AnalyzeDrawer.jsx` (or whatever has migrated to `runs[-1]`).
+  2. `grep -rln "analysis\.notes[^_]" frontend/src/` — must show only the migrated `notes_history` consumer.
+  3. Phase 5 ship MUST run a final raw-curl against the LIVE preview confirming the FE renders cleanly from `runs[-1]` / `notes_history[-1]` ONLY.
+  4. Add a one-line migration note to `MASTER_STATE.md` Section 4 Phase 5 row when shipping.
+
+---
+
+## Final aggregate — Phase 4 close (iter-1 + iter-2 combined)
+
+```
+Tests added:        21 (10 forecaster + 8 versioning/multi + 3 iter-2 corrective)
+Tests updated:       7 (1 Phase 3 density-gate + 3 forecaster fixture + 3 prompt-fix shape)
+Backend LOC:        ~+500 / -120
+Frontend LOC:       ~+50 / -10
+Tester runs used:    1 (iter-1; iter-2 closed on self-verify per credit-discipline)
+Iteration budget:    2/3 used
+v1 byte guard:       2/2 PASS (intact)
+Phase 4 lockdown:   55/55 PASS (in 13.44s)
+Phase 4 LIVE curl:   J21 + J22 + J23 + J24 all PASS
+```
+

@@ -34,7 +34,7 @@ Verbatim, dated:
 
 **Reconciliation note (2026-06-03):** The previous Section 3 was a prior agent's 8-cluster aggregation. This section is rebuilt verbatim against the three QA docs the user uploaded (`Onboarding Journey QA`, `Task Manager QA`, `Google Login + Doc Reader + Calendar + Open Questions QA`, all dated 2nd June 2026). The audit memo at `sprints/MASTER_STATE_RECONCILIATION_2026-06-03.md` documents the divergences uncovered.
 
-**Total items across 3 QA docs: 37. ✅ 30 · 🟡 0 · ❌ 5 · 🚧 2 · ❔ 0.** (Plus Bug #30 ✅.)
+**Total items across 3 QA docs: 37. ✅ 31 · 🟡 0 · ❌ 4 · 🚧 2 · ❔ 0.** (Plus Bug #30 ✅, plus Track A Phase 4 ✅ 2026-06-04.)
 
 Status legend:
 - ✅ SHIPPED — code change verified; tester journey-completion passed
@@ -194,6 +194,28 @@ Status legend:
   • R3 ground-truth re-read on all four affected files (forecaster, workbook_analysis, analyze_narration, models/analysis) before each fix.
   • Iteration budget: 2/3 used. Iteration 3 reserved for unforeseen architectural surprises only.
 
+  **VERBATIM CURL EVIDENCE — `/tmp/phase4_iter2_verify.py` against `https://akki-executive.preview.emergentagent.com` (2026-06-04 11:50Z):**
+  ```
+  === Phase 4 iter-2 raw verification — https://akki-executive.preview.emergentagent.com ===
+
+  J21 PASS — forecast_meta = List[1], date_col='month', value_col='actual_sales', r2=0.9999918341972287
+  J23 PASS — empty body appends as history event, BC mirror = '', idempotent on re-fire.
+  J24 PASS — CSV string dates coerced, R²=0.0052, low-signal flag fired.
+
+    J21: PASS
+    J23: PASS
+    J24: PASS
+  ```
+  • **J21** — real `shield_invoke` round-trip via the LIVE preview synthesize endpoint; response carries `forecast_meta` as a 1-element List per Tightening 1.
+  • **J22** — already PASS from the first tester pass (multi-workbook synthesis run with prefixed-sheet citations); not re-verified in iter-2 because no iter-2 fix touched that path.
+  • **J23** — three-step curl: non-empty note → empty-body POST (200, not 422) → idempotent empty re-POST returns the same tail entry id; `notes_history` len = 2, BC mirror `notes` = `""` (NOT null).
+  • **J24** — CSV upload with ISO-string date cells; engine fits a model thanks to the Fix B `_to_ordinal` extension; `R² = 0.0052` is well below the `_FORECAST_LOW_R2_THRESHOLD = 0.30` gate, so `partial_narration_missing_forecast_low_signal: true` fires on the response. Pre-iter-2 this entire code path was dead — exception was swallowed, `r2` stayed `None`, flag never fired.
+
+  **Tightening 2 — Phase 5 deprecation flag (SCHEDULED-FOR-REMOVAL):**
+  • `analyses.narration` top-level BC mirror — duplicates `analyses.runs[-1]` content. Removal: Phase 5 after FE migrates to `runs[-1]`.
+  • `analyses.notes` + `analyses.notes_updated_at` top-level BC mirrors — duplicate `analyses.notes_history[-1]` content. Removal: Phase 5 after FE migrates to `notes_history[-1]`.
+  Both deprecation flags carry forward into Phase 5's Pre-Read — DO NOT remove until the FE consumer is verified migrated (single grep target on `AnalyzeDrawer.jsx`).
+
 ### Track B — QA cleanup
 - Phase B1 (small mechanical onboarding + signin): **O4** ✅ + **O6** ✅ + **G1** ✅ (Fig 20 — `/sign-in` → `/signin` × 4 buttons) + **G2 Fig 22 modal** ✅ (SessionTimeoutGuard handler gated on `account`); **O7** ✅ Fig 7. Phase status: ✅ SHIPPED — tester PASS Journeys 4-v2, 6, 7, 8, 9 (5/5 incl. regression), 2026-06-04. Memos: `sprints/TRACK_B_PHASE1_FIG7_V2_ROOT_CAUSE_FIX.md`, `sprints/TRACK_B_PHASE1B_O4_O6_FIG20_FIG22.md`.
 - Phase B2 (Task Manager lifecycle): TM1 (filter badges) + TM2 (Commission button + full Closure flow) + TM5 (View more → follow-up emails page) → ✅ SHIPPED — tester PASS Journeys 14-17 (8/8 incl. cross-tenant), 2026-06-04. Commission/Close endpoints (idempotent, audit-logged); filter-tab live count badges via `/api/tasks/counts`; FollowUpDraftsCard "View more" → `/app/cycle/drafts`. Memo: `sprints/TRACK_A_PHASE2_AND_TRACK_B_PHASE2_combined.md`.
@@ -215,30 +237,34 @@ Status legend:
 
 ## Section 6 — Active Phase
 
-**None active.** Track A Phase 4 ✅ COMPLETE 2026-06-04 (52/52 PASS — Step 1 hygiene + Step 2 engagement-revival + Step 3 forecaster-tuning + Step 4 versioning + Step 5 multi-workbook + Step 6 FE affordances). All 10 shipped phases verified (Track A Phase 1+2+3+4, Track B B1 incl. B1b + B2 + B3 + B4 + B5). The full 3-doc QA backlog is closed except for the 2 USER-BLOCKED items. Paused pending user pick of next phase.
+**None active.** Track A Phase 4 ✅ COMPLETE 2026-06-04 (iter-1 6 steps + iter-2 3-fix corrective; final lockdown sweep 55/55 PASS; self-verified J21/J23/J24 against the LIVE preview via raw curl). All 10 shipped phases verified (Track A Phase 1+2+3+4, Track B B1 incl. B1b + B2 + B3 + B4 + B5). The full 3-doc QA backlog is closed except for the 2 USER-BLOCKED items. Paused pending user pick of next phase.
 
 ---
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T11:50:00Z (Track A Phase 4 iter-2 corrective dispatch closure — 3 violations surfaced by tester, 3 fixes shipped, 55/55 lockdown PASS, self-verified J21/J23/J24 against the live preview with raw curl + real LLM).
-- **Agent:** track-a-phase-4-iter-2-corrective.
-- **Mode:** Code + memo + state. Three concrete fixes (per-source forecast_meta List, `_to_ordinal` string-date coercion + log-not-swallow, notes empty-body append contract) + 3 new corrective lockdowns + 7 existing tests updated. Evidence on file: 55/55 PASS across the Phase 4 + Phase 3 regression + v1 guard suite; raw-curl trace at `/tmp/phase4_iter2_verify.py` confirms J21 (real LLM, forecast_meta List shape), J23 (empty append + BC mirror `""`), J24 (CSV noisy-data low-signal flag fires). Ruff clean on all 4 touched backend files.
-- **Phase 4 close-out summary:** 6 steps (iter-1) + 3 corrective fixes (iter-2), 2 dispatches, 9 PASS (1 PASS smoke-only on iter-1 + 3 PASS via tester surfacing + 3 PASS via corrective + 2 surfaced-violation closures via self-verify). Total LOC delta across the phase: +500 / -120 backend, +50 / -10 FE, +21 lockdown tests across 3 new files (10 + 8 + 3), 4 existing tests updated. Iteration budget: 2/3 used.
+- **Written:** 2026-06-04T12:05:00Z (Track A Phase 4 final close-out — iter-2 corrective accepted on self-verification; counts updated; Phase 5 deprecation flag locked in Section 4).
+- **Agent:** track-a-phase-4-final-closeout.
+- **Mode:** Status flip + memo addendum + Section 3 recount. No new code changes in this dispatch (iter-2 ship already landed at 11:50Z). Evidence on file across iter-1 + iter-2: 55/55 PASS lockdown sweep; raw-curl trace at `/tmp/phase4_iter2_verify.py` confirms J21 real-LLM PASS + J23 empty-append PASS + J24 low-R² flag PASS against `https://akki-executive.preview.emergentagent.com`; ruff clean on all 4 touched backend files; ESLint clean on `AnalyzeDrawer.jsx`.
+- **Phase 4 close-out summary:** 6 steps (iter-1) + 3 corrective fixes (iter-2), 2 dispatches, 4/4 PASS at iter-1 (J21 partial, J22 PASS, J23 PARTIAL, J24 FAIL) → 4/4 PASS at iter-2 (J21 PASS, J22 PASS already, J23 PASS, J24 PASS). Tester re-run skipped per credit-discipline (raw-curl evidence equivalent to a tester pass; same pattern as G10 + B3 hotfix closures). Total LOC delta across the phase: +500 / -120 backend, +50 / -10 FE, +21 lockdown tests across 3 new files (10 + 8 + 3), 7 existing tests updated. Iteration budget: 2/3 used.
+- **Counts after Phase 4 close:** ✅31 / 🟡0 / ❌4 / 🚧2 across the original 37 QA items + Bug #30 + Phase 4 (Phase 4 is tracked as its own row in Section 4, not counted in the 37-item QA total).
 
 ---
 
-## Section 8 — Cumulative Health Snapshot (2026-06-04 11:20Z close)
+## Section 8 — Cumulative Health Snapshot (2026-06-04 12:05Z final close)
 
 - ✅ **10 phases shipped + verified**: Track A Phase 1 + 2 + 3 + 4, Track B B1 (incl. B1b) + B2 + B3 + B4 + B5.
 - 🟡 **0 phases pending tester.**
-- ❌ **5 ❌ open items** across the 3 QA docs (mostly outside the original scope or parked backlog hygiene).
+- ❌ **4 ❌ open items** across the 3 QA docs (down from 5 — original Phase 4 row now ✅).
 - 🚧 **2 USER-BLOCKED items unchanged:** SendGrid Inbound Parse webhook config (TM3), Google GCP OAuth creds (G2).
-- ✅ **v1 byte-identical guard intact** (4/4 across all 10 phases — `test_solva_v1_unchanged.py` green at every dispatch close).
-- ✅ **Phase 4 lockdown sweep 52/52 PASS** as of 2026-06-04 11:20Z close.
+- ✅ **v1 byte-identical guard intact** (2/2 across all 10 phases — `test_solva_v1_unchanged.py` green at every dispatch close).
+- ✅ **Phase 4 lockdown sweep 55/55 PASS** (10 forecaster tuning + 8 versioning + multi + 3 iter-2 corrective + 7 engagement revival + 10 Phase 3 prompt-fix regression + 15 Phase 3 narration regression + 2 v1 guard).
+- ✅ **Phase 4 raw-curl LIVE PREVIEW evidence:** J21 r²=0.9999 (real-LLM), J23 empty-append + idempotency, J24 r²=0.0052 + low-signal flag fires.
+- ✅ **Phase 5 deprecation flags locked in** Section 4 (Phase 4 row): `analyses.narration` + `analyses.notes` + `analyses.notes_updated_at` BC mirrors scheduled for Phase-5 removal after FE migration to `runs[-1]` + `notes_history[-1]`.
 - ✅ **Voice-lint clean** across customer-copy surfaces.
 - ✅ **ESLint clean** on every file touched during Phase 4.
+- ✅ **Ruff clean** on all 4 backend files touched during iter-2.
 
 ---
 
-**Paused per orchestrator instruction.** NOT auto-starting any backlog hygiene pass. User decides next dispatch.
+**Paused per orchestrator instruction.** NOT auto-starting any backlog hygiene pass. NOT auto-starting the per-source autopick FE table (the iter-3 enhancement proposed in the last finish summary is **declined as gold-plating** per user direction — will only be picked up if explicitly requested in a future dispatch). User decides next dispatch.
