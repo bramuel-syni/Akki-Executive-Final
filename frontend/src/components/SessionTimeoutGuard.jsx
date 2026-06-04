@@ -54,14 +54,39 @@ export default function SessionTimeoutGuard() {
 
   useEffect(() => {
     // Listen for backend-driven session events.
+    //
+    // P0-C v2 (Fig 22 — Track B Phase B1b, 2026-06-04): the original
+    // handler had `[]` deps and unconditionally opened the modal on
+    // any `session_idle_timeout` event. Root cause of Fig 22:
+    //   1. SPA boots on /oauth/callback with a STALE access_token in
+    //      localStorage from a prior signed-out session.
+    //   2. AuthProvider.bootstrap() at AuthContext.jsx:87-89 calls
+    //      `api.get("/auth/me")` to check who's signed in.
+    //   3. SessionTimeoutMiddleware sees the stale token + a
+    //      `last_activity_at` past the 30-min idle window, returns
+    //      401 `session_idle_timeout`.
+    //   4. lib/api.js:236-241 dispatches `akki:session-event`.
+    //   5. THIS handler opens the re-auth modal — surfacing
+    //      "Re-enter your password to keep this session active" to
+    //      a user who hasn't yet completed the OAuth flow and may
+    //      not even have a password (Google-only sign-in).
+    //   6. Meanwhile OAuth `/finish` succeeds and the user IS signed
+    //      in — but the stale modal is sitting there.
+    //
+    // Fix: gate the modal-open on `account` truthy. If there's no
+    // current account, a `session_idle_timeout` is NOT a real
+    // session-idle event — it just means the prior session was
+    // already invalid. The bootstrap path already clears the stale
+    // token in its catch block (AuthContext.jsx:152-157).
     const handler = (e) => {
+      if (!account) return;
       const code = e?.detail?.code;
       if (code === "session_idle_timeout") setReauthOpen(true);
       if (code === "session_absolute_timeout") setExpiredOpen(true);
     };
     window.addEventListener("akki:session-event", handler);
     return () => window.removeEventListener("akki:session-event", handler);
-  }, []);
+  }, [account]);
 
   useEffect(() => {
     if (!account) return undefined;

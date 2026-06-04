@@ -82,7 +82,7 @@ export default function ResetPassword() {
         <header className="mb-6">
           <button
             type="button"
-            onClick={() => navigate("/sign-in")}
+            onClick={() => navigate("/signin")}
             className="inline-flex items-center gap-1.5 text-[12px] text-[var(--muted)] hover:text-[var(--ink)] mb-4 transition-colors"
             data-testid="reset-password-back"
           >
@@ -187,7 +187,7 @@ export default function ResetPassword() {
             </p>
             <Button
               type="button"
-              onClick={() => navigate("/sign-in")}
+              onClick={() => navigate("/signin")}
               className="w-full bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)]"
               data-testid="reset-password-go-signin"
             >

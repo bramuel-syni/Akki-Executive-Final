@@ -40,7 +40,7 @@ export default function ForgotPassword() {
         <header className="mb-6">
           <button
             type="button"
-            onClick={() => navigate("/sign-in")}
+            onClick={() => navigate("/signin")}
             className="inline-flex items-center gap-1.5 text-[12px] text-[var(--muted)] hover:text-[var(--ink)] mb-4 transition-colors"
             data-testid="forgot-password-back"
           >
@@ -70,7 +70,7 @@ export default function ForgotPassword() {
             </p>
             <Button
               type="button"
-              onClick={() => navigate("/sign-in")}
+              onClick={() => navigate("/signin")}
               className="mt-6 w-full bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)]"
               data-testid="forgot-password-return-signin"
             >

@@ -322,15 +322,16 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip, refreshAuth }) {
       if (door === "demo") {
         // J2 (G22 ratified) — backend stamped `seed_marker_visible_for`
         // on the DEMO_T5_BACKLOG rows and flipped status → completed.
-        // P0-B Card 3 (2026-02) — Drop the user on the **Cycle Manager**
-        // root per spec G22, NOT on a specific demo-cycle detail page.
-        // The demo backlog rows are visible on the Cycle Manager listing
-        // by virtue of the seed-marker stamp the backend just made.
-        // Side-effect (demo attach) already happened in the
-        // `/me/first-session/choose-door` POST above — only the
-        // navigation target changes here.
+        // Track B Phase B1b (2026-06-04) — re-dispatch per Onboarding
+        // QA item 6: the verbatim ask is "I think the user should land
+        // on the Home Page", not Cycle Manager. App.js:435 mounts
+        // `<Route path="/app" element={<AppHome />} />` — that is the
+        // canonical Home route (there is no /app/home alias). Updated
+        // accordingly. The demo backlog rows remain visible from the
+        // Home → Cycle Manager link by virtue of the seed-marker stamp
+        // the backend just made.
         try { if (refreshAuth) await refreshAuth(); } catch { /* noop */ }
-        navigate("/app/cycle");
+        navigate("/app");
         return;
       }
       if (door === "upload") {
@@ -346,12 +347,20 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip, refreshAuth }) {
         return;
       }
       if (door === "cycle") {
-        // J2 (G21) — Door A routes to the T5 Cycle Setup Wizard.
-        // Backend left status in `in_progress`; the Setup Wizard
-        // owns the next-step UX. `intake_seed=1` cues the wizard to
-        // pre-fill the cycle name from the user's Q2 intake answer.
+        // J2 (G21) — Door A was originally routed to the T5 Cycle
+        // Setup Wizard. Track B Phase B1b (2026-06-04) — re-dispatch
+        // per Onboarding QA item 4: the verbatim ask is "I think the
+        // user should be redirected to the Task Manager Module shown
+        // in figure 3", NOT the Cycle Setup Wizard. App.js:446 mounts
+        // `<Route path="/app/task-manager" element={<TaskManager />} />`
+        // — that is the canonical Task Manager surface. The
+        // `intake_seed=1` query param is dropped because the Task
+        // Manager doesn't consume it (it was a Cycle Setup Wizard
+        // concept); intake stays persisted on the account doc and is
+        // available via `/me/first-session` if the surface ever wants
+        // to read it.
         try { if (refreshAuth) await refreshAuth(); } catch { /* noop */ }
-        navigate(`/app/cycle?wizard=1&intake_seed=1`);
+        navigate("/app/task-manager");
         return;
       }
       onDoorChosen(door);
