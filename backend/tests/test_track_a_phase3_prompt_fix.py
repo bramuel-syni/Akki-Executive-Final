@@ -188,11 +188,14 @@ async def test_forecast_meta_surfaces_in_response(transport, monkeypatch):
         assert r.status_code == 200, r.text
         body = r.json()
         fm = body.get("forecast_meta")
-        assert fm is not None, "forecast_meta missing from response"
-        assert fm.get("date_col") == "month"
-        assert fm.get("value_col") == "actual_sales"
-        assert isinstance(fm.get("picker_reason"), str)
-        assert "non_null_count" in fm["picker_reason"]
+        # Track A Phase 4 iter-2 — forecast_meta is a List (Tightening 1).
+        assert isinstance(fm, list), "forecast_meta must be a List per Tightening 1"
+        assert len(fm) == 1, f"single-workbook → one-element list; got len={len(fm)}"
+        m0 = fm[0]
+        assert m0.get("date_col") == "month"
+        assert m0.get("value_col") == "actual_sales"
+        assert isinstance(m0.get("picker_reason"), str)
+        assert "non_null_count" in m0["picker_reason"]
 
 
 # ── 3. Bounded retry once when whats_likely_next missing ────────
@@ -334,7 +337,7 @@ async def test_post_shield_validator_sets_per_tab_missing_flags(transport, monke
     monkeypatch.setattr(narr, "shield_invoke", AsyncMock(side_effect=[omits_odd, omits_odd]))
     result = await narr.narrate_analysis(
         workbook_analysis=wba, account_id="acct-1", objective="",
-        forecast_meta={"date_col": "month", "value_col": "actual_sales", "picker_reason": "test"},
+        forecast_meta=[{"date_col": "month", "value_col": "actual_sales", "picker_reason": "test"}],
     )
     assert result.get("partial_narration_missing_whats_odd") is True, (
         f"validator failed to flag missing whats_odd; got {sorted(result.keys())!r}"
@@ -485,8 +488,10 @@ async def test_forecast_meta_passes_to_prompt_even_when_run_forecast_raises(
             "forecast_meta missing — autopicker decision was dropped "
             "when run_forecast raised (R3v3 regression)."
         )
-        assert body["forecast_meta"]["date_col"] == "month"
-        assert body["forecast_meta"]["value_col"] == "actual_sales"
+        # Track A Phase 4 iter-2 — List (Tightening 1).
+        assert isinstance(body["forecast_meta"], list)
+        assert body["forecast_meta"][0]["date_col"] == "month"
+        assert body["forecast_meta"][0]["value_col"] == "actual_sales"
 
 
 # ── 8. logger.warning fires on swallowed forecast exception ────
@@ -598,8 +603,8 @@ async def test_all_three_tabs_persist_when_all_blocks_populated(
         workbook_analysis=wba,
         account_id="acct-1",
         objective="",
-        forecast_meta={"date_col": "month", "value_col": "actual_sales",
-                       "picker_reason": "test"},
+        forecast_meta=[{"date_col": "month", "value_col": "actual_sales",
+                        "picker_reason": "test"}],
     )
     tabs = {o["tab"] for o in result["observations"]}
     assert tabs == {"what_changed", "whats_likely_next", "whats_odd"}, (
@@ -683,8 +688,8 @@ async def test_empty_sentinel_no_leak_in_prompt_or_response(transport, monkeypat
         objective="",
         blocks=blocks,
         workbook_context={"date_columns": ["month"], "numeric_columns": ["sales"]},
-        forecast_meta={"date_col": "month", "value_col": "sales",
-                       "picker_reason": "non_null_count=24, value_spread=46233.03"},
+        forecast_meta=[{"date_col": "month", "value_col": "sales",
+                        "picker_reason": "non_null_count=24, value_spread=46233.03"}],
     )
     # Strict word-boundary check — the comment in source carries the
     # word in quotes, but the RENDERED prompt must not.

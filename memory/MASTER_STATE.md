@@ -165,6 +165,35 @@ Status legend:
 
   Memo: `sprints/TRACK_A_PHASE_4_MULTI_WORKBOOK_VERSIONING.md`.
 
+  **ITER-2 CORRECTIVE DISPATCH (2026-06-04 11:50Z) — 3/3 FIXES SHIPPED**
+
+  Tester surfaced 3 violations of pre-approved Pre-Read commitments in iter-1; all three landed in one corrective dispatch with raw curl + pytest self-verification against the LIVE preview.
+
+  • **Fix A (Tightening 1 — `forecast_meta` as List)** — Per-source autopick loop in `synthesize_v2_endpoint`. `forecast_meta` is now `List[Dict]` of length `parsed_source_count` (single-workbook → one-element list, NOT a bare dict). `narrate_analysis` + `_build_prompt` signatures + result envelope updated to List. The "deferred to Phase 5" code comment deleted. FE grep: 1 consumer file (`AnalyzeDrawer.jsx`), uses partial flag (not raw `forecast_meta`) — invisible to the List-shape change.
+
+  • **Fix B (No silent except-swallow)** — `_to_ordinal` in `services/workbook_analyzer/forecaster.py` extended to accept ISO date strings via the parser's grammar (`%Y-%m-%d`, `%Y/%m/%d`, `%d/%m/%Y`, `%m/%d/%Y`, `%Y-%m`, `%Y/%m`). The CSV string-date path now reaches `run_forecast` → R² is computed → low-signal flag gate is reachable. Caller logs swallowed `ValueError` with `exc_info=True` AND surfaces `failure_reason` on the per-source meta entry; no silent holes.
+
+  • **Fix C (Notes empty-body deletion contract)** — `_AnalysisNoteIn.body` + `AnalysisNote.body` (models/analysis.py) changed from `min_length=1` to `min_length=0`. Empty-body POST appends `{body: ""}` as a deletion history event; BC mirror `notes` becomes `""` (NOT null — divergence vs G6 documents.notes locked in Tightening 5). Idempotency unchanged — identical-body re-POST (including empty) returns tail entry.
+
+  **Iter-2 lockdowns: 3 NEW + 7 UPDATED.**
+  • NEW: `test_track_a_phase4_iter2_corrective.py` (3/3 PASS) covering `_to_ordinal` grammar + empty-append + CSV noisy-data E2E.
+  • Updated 3 tests in `test_track_a_phase4_forecaster_tuning.py` (forecast_meta dict → list).
+  • Updated 4 tests in `test_track_a_phase3_prompt_fix.py` (forecast_meta dict → list).
+
+  **Aggregate Phase 4 lockdown status — 55/55 PASS in 13.44s** across 7 test files (forecaster tuning + versioning+multi + iter-2 corrective + engagement revival + Phase 3 prompt-fix regression + Phase 3 narration regression + v1 byte-identical guard).
+
+  **Self-verification against LIVE preview** (`/tmp/phase4_iter2_verify.py` — raw curl, real `shield_invoke`):
+  • J21: `forecast_meta = List[1]`, real-LLM round-trip OK, R²=0.9999918341972287 — **PASS**
+  • J23: empty-body append + BC mirror `""` + idempotent re-POST — **PASS**
+  • J24: CSV string-date coercion worked, R²=0.0052, low-signal flag fired — **PASS**
+
+  **Discipline rails — iter-2 observed:**
+  • Honesty Protocol — surfaced violations explicitly; no silent re-roll.
+  • All `except` blocks in Phase 4 code now log with `exc_info=True` AND document the swallow contract inline.
+  • No new env vars / migrations / Track B retouch / new UI components / `shield_invoke` signature change.
+  • R3 ground-truth re-read on all four affected files (forecaster, workbook_analysis, analyze_narration, models/analysis) before each fix.
+  • Iteration budget: 2/3 used. Iteration 3 reserved for unforeseen architectural surprises only.
+
 ### Track B — QA cleanup
 - Phase B1 (small mechanical onboarding + signin): **O4** ✅ + **O6** ✅ + **G1** ✅ (Fig 20 — `/sign-in` → `/signin` × 4 buttons) + **G2 Fig 22 modal** ✅ (SessionTimeoutGuard handler gated on `account`); **O7** ✅ Fig 7. Phase status: ✅ SHIPPED — tester PASS Journeys 4-v2, 6, 7, 8, 9 (5/5 incl. regression), 2026-06-04. Memos: `sprints/TRACK_B_PHASE1_FIG7_V2_ROOT_CAUSE_FIX.md`, `sprints/TRACK_B_PHASE1B_O4_O6_FIG20_FIG22.md`.
 - Phase B2 (Task Manager lifecycle): TM1 (filter badges) + TM2 (Commission button + full Closure flow) + TM5 (View more → follow-up emails page) → ✅ SHIPPED — tester PASS Journeys 14-17 (8/8 incl. cross-tenant), 2026-06-04. Commission/Close endpoints (idempotent, audit-logged); filter-tab live count badges via `/api/tasks/counts`; FollowUpDraftsCard "View more" → `/app/cycle/drafts`. Memo: `sprints/TRACK_A_PHASE2_AND_TRACK_B_PHASE2_combined.md`.
@@ -192,10 +221,10 @@ Status legend:
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T11:20:00Z (Track A Phase 4 closure — 6 steps, single coherent dispatch, 52/52 lockdown PASS across the affected surfaces).
-- **Agent:** track-a-phase-4-closure (fork-resumed mid-execution).
-- **Mode:** Status flip + memo write. Code changes documented in `sprints/TRACK_A_PHASE_4_MULTI_WORKBOOK_VERSIONING.md`. Evidence on file: 10/10 forecaster-tuning lockdown PASS, 8/8 versioning + multi-workbook lockdown PASS, 7/7 engagement-revival PASS, 10/10 Phase 3 prompt-fix regression PASS, 15/15 Phase 3 narration regression PASS (with one density-gate-updated test, intent preserved), 4/4 v1 byte-identical guard PASS. ESLint clean on `AnalyzeDrawer.jsx`. FE smoke screenshot `/tmp/phase4_smoke.png` confirmed signin page renders cleanly (no JS error).
-- **Phase 4 close-out summary:** 6 steps, 1 dispatch, 6 PASS. Step 1 (hygiene) pre-Phase 4. Step 2 (engagement revival) 7/7 PASS in 5.17s. Step 3 (forecaster tuning) 10/10 PASS. Step 4 (versioning data model) lockdowns inside Step 5's test file. Step 5 (multi-workbook synthesis) 8/8 PASS. Step 6 (FE) ESLint clean + smoke OK. Total LOC delta: +400 / -90 backend, +50 / -10 FE, +18 lockdown tests added across 2 new files, 1 existing Phase 3 test density-gate-updated.
+- **Written:** 2026-06-04T11:50:00Z (Track A Phase 4 iter-2 corrective dispatch closure — 3 violations surfaced by tester, 3 fixes shipped, 55/55 lockdown PASS, self-verified J21/J23/J24 against the live preview with raw curl + real LLM).
+- **Agent:** track-a-phase-4-iter-2-corrective.
+- **Mode:** Code + memo + state. Three concrete fixes (per-source forecast_meta List, `_to_ordinal` string-date coercion + log-not-swallow, notes empty-body append contract) + 3 new corrective lockdowns + 7 existing tests updated. Evidence on file: 55/55 PASS across the Phase 4 + Phase 3 regression + v1 guard suite; raw-curl trace at `/tmp/phase4_iter2_verify.py` confirms J21 (real LLM, forecast_meta List shape), J23 (empty append + BC mirror `""`), J24 (CSV noisy-data low-signal flag fires). Ruff clean on all 4 touched backend files.
+- **Phase 4 close-out summary:** 6 steps (iter-1) + 3 corrective fixes (iter-2), 2 dispatches, 9 PASS (1 PASS smoke-only on iter-1 + 3 PASS via tester surfacing + 3 PASS via corrective + 2 surfaced-violation closures via self-verify). Total LOC delta across the phase: +500 / -120 backend, +50 / -10 FE, +21 lockdown tests across 3 new files (10 + 8 + 3), 4 existing tests updated. Iteration budget: 2/3 used.
 
 ---
 

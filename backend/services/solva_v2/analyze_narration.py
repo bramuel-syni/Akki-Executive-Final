@@ -124,18 +124,25 @@ def _build_prompt(
     objective: str,
     blocks: List[_DetBlock],
     workbook_context: Optional[Dict[str, Any]] = None,
-    forecast_meta: Optional[Dict[str, Any]] = None,
+    forecast_meta: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Build the LLM prompt.
+
+    Track A Phase 4 iter-2 (2026-06-04) — `forecast_meta` is now a
+    `List[Dict]` with one entry per source workbook (Tightening 1).
+    Single-workbook case is a one-element list; the prompt collapses
+    to one FORECAST BLOCK with no per-source breakdown for backwards
+    compatibility with the Phase 3 R3v3 layout.
 
     Track A Phase 3 R3v3 (2026-06-04) — surfaces SIGNALS BLOCK /
     FORECAST BLOCK / ANOMALIES BLOCK explicitly, and REQUIREs the
     matching observation tab for each non-empty block:
 
       • Signals exist → require `what_changed` observation(s).
-      • Forecast attempted (autopick succeeded) → require
-        `whats_likely_next` observation, even if the deterministic
-        forecast vector was empty (engine couldn't fit a line).
+      • Forecast attempted on ANY source (autopick succeeded) →
+        require `whats_likely_next` observation, even if the
+        deterministic forecast vector was empty (engine couldn't
+        fit a line).
       • Anomalies exist → require `whats_odd` observation(s).
 
     Each block that is empty surfaces an explicit "no X — omit the
@@ -169,12 +176,15 @@ def _build_prompt(
     has_anomalies = bool(anomaly_lines)
 
     # Forecast tab is required when EITHER (a) the deterministic
-    # forecast vector is present OR (b) the autopicker succeeded but
-    # the engine returned no projections — in case (b) the prompt
-    # tells Claude to narrate what the (date_col, value_col) attempt
-    # implies based on signals + anomalies.
-    forecast_attempted = bool(forecast_meta and forecast_meta.get("date_col"))
-    forecast_required = has_forecast_vector or forecast_attempted
+    # forecast vector is present OR (b) the autopicker succeeded on
+    # ANY source — in case (b) the prompt tells Claude to narrate
+    # what the (date_col, value_col) attempt implies based on
+    # signals + anomalies.
+    fmeta_list: List[Dict[str, Any]] = forecast_meta or []
+    any_forecast_attempted = any(
+        bool(m.get("date_col")) for m in fmeta_list
+    )
+    forecast_required = has_forecast_vector or any_forecast_attempted
 
     # ── Workbook context block ────────────────────────────────
     ctx = workbook_context or {}
@@ -231,34 +241,96 @@ def _build_prompt(
     signals_block = "\nSIGNALS BLOCK\n" + (
         "\n".join(signal_lines) if signal_lines else "(no signals — OMIT `what_changed` tab)"
     ) + "\n"
-    if forecast_attempted:
+
+    # FORECAST BLOCK — Track A Phase 4 iter-2: per-source rendering.
+    # If exactly one source has a forecast attempt, render the
+    # Phase 3 R3v3 single-source layout. If 2+ sources attempted,
+    # render a per-source breakdown so the LLM can attribute
+    # forward-looking commentary by workbook. If none attempted,
+    # render the "no forecast" line.
+    attempted_metas = [m for m in fmeta_list if m.get("date_col")]
+    rejected_metas = [
+        m for m in fmeta_list
+        if not m.get("date_col") and not m.get("parse_failed")
+    ]
+    if not attempted_metas:
+        forecast_block = (
+            "\nFORECAST BLOCK\n"
+            "(no forecast attempted — OMIT `whats_likely_next` tab)\n"
+        )
+    elif len(attempted_metas) == 1:
+        # Single-source layout preserved verbatim from Phase 3 R3v3.
+        m0 = attempted_metas[0]
         fc_header = (
             f"\nFORECAST BLOCK\n"
-            f"Autopicker chose ({forecast_meta['date_col']}, "
-            f"{forecast_meta['value_col']}); "
-            f"reason: {forecast_meta.get('picker_reason', 'n/a')}.\n"
+            f"Autopicker chose ({m0['date_col']}, "
+            f"{m0['value_col']}); "
+            f"reason: {m0.get('picker_reason', 'n/a')}.\n"
         )
         if has_forecast_vector:
             fc_body = "\n".join(forecast_lines) + "\n"
         else:
-            # Track A Phase 3 R3v4 (2026-06-04) — the prior copy
-            # contained the all-caps sentinel "EMPTY" which Claude
-            # echoed verbatim into prose ("...EMPTY attempted to model
-            # the relationship..."). Rewritten as a humanised sentence
-            # with no sentinel tokens.
+            # Track A Phase 3 R3v4 — humanised "could not fit" prose.
             fc_body = (
                 "The deterministic forecast engine could not fit a "
-                f"linear model to ({forecast_meta['date_col']}, "
-                f"{forecast_meta['value_col']}) on this workbook. "
+                f"linear model to ({m0['date_col']}, "
+                f"{m0['value_col']}) on this workbook. "
                 "Narrate what is likely next using the SIGNALS and "
                 "ANOMALIES BLOCKS above and below in plain business "
                 "language; DO NOT fabricate any numeric projection.\n"
             )
+            if m0.get("failure_reason"):
+                fc_body += (
+                    f"(engine reason: {m0['failure_reason']})\n"
+                )
         forecast_block = fc_header + fc_body
     else:
+        # Multi-source layout — one paragraph per attempted source,
+        # then the flat forecast_lines below for cross-source
+        # context. This is additive: the prompt still labels the
+        # `whats_likely_next` tab as required.
+        per_source: List[str] = []
+        for m in attempted_metas:
+            label = m.get("filename") or "source"
+            reason = m.get("picker_reason", "n/a")
+            r2_str = (
+                f"; R²={m['r2']:.3f}" if isinstance(m.get("r2"), (int, float))
+                else ""
+            )
+            fail_str = (
+                f"; engine swallowed: {m['failure_reason']}"
+                if m.get("failure_reason") else ""
+            )
+            per_source.append(
+                f"  - {label}: ({m['date_col']}, {m['value_col']})"
+                f" — reason {reason}{r2_str}{fail_str}"
+            )
         forecast_block = (
-            "\nFORECAST BLOCK\n"
-            "(no forecast attempted — OMIT `whats_likely_next` tab)\n"
+            "\nFORECAST BLOCK (per-source autopick)\n"
+            + "\n".join(per_source)
+            + "\n"
+        )
+        if has_forecast_vector:
+            forecast_block += (
+                "Engine projections:\n" + "\n".join(forecast_lines) + "\n"
+            )
+        else:
+            forecast_block += (
+                "No deterministic projection vector available — "
+                "narrate forward-looking implications from SIGNALS + "
+                "ANOMALIES; DO NOT fabricate any numeric projection.\n"
+            )
+    if rejected_metas:
+        # Append an explicit "rejected" breakdown so the LLM sees
+        # the per-source gap rather than a silent hole.
+        rejected_lines = [
+            f"  - {m.get('filename')}: {m.get('picker_reason', 'no_pair')}"
+            for m in rejected_metas
+        ]
+        forecast_block += (
+            "Sources with no eligible (date, numeric) pair:\n"
+            + "\n".join(rejected_lines)
+            + "\n"
         )
     anomalies_block = "\nANOMALIES BLOCK\n" + (
         "\n".join(anomaly_lines) if anomaly_lines else "(no anomalies — OMIT `whats_odd` tab)"
@@ -560,7 +632,7 @@ async def narrate_analysis(
     objective: str = "",
     cached: Optional[Dict[str, Any]] = None,
     workbook_context: Optional[Dict[str, Any]] = None,
-    forecast_meta: Optional[Dict[str, Any]] = None,
+    forecast_meta: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Run the narration pipeline. Returns
     `{headline, observations[], citations[], cache_key, refused,
@@ -570,12 +642,19 @@ async def narrate_analysis(
     if its `cache_key` matches the current content hash, returns it
     unchanged.
 
+    Track A Phase 4 iter-2 (2026-06-04) — `forecast_meta` is now a
+    `List[Dict]` with one entry per source workbook (Tightening 1
+    invariant). Single-workbook case is still a one-element list;
+    pre-iter-2 single-dict callers are no longer supported (zero
+    in-tree consumers — verified via grep). The response's
+    `forecast_meta` key mirrors the input shape (List).
+
     Track A Phase 3 R3v2 (2026-06-04) — extended signature:
       • `workbook_context`: `{date_columns: [..], numeric_columns: [..]}`
         injected into the prompt so Claude knows rows are points in
         time, NOT entities.
-      • `forecast_meta`: `{date_col, value_col, picker_reason}` —
-        when present, the prompt REQUIRES a `whats_likely_next`
+      • `forecast_meta`: per-source list — when ANY entry has
+        `date_col` set, the prompt REQUIRES a `whats_likely_next`
         observation. If the LLM omits it, we bounded-retry once and
         then set `partial_narration_missing_forecast: true` so the
         FE can surface "forecast not narrated this run".
@@ -583,6 +662,11 @@ async def narrate_analysis(
     blocks = _collect_deterministic(workbook_analysis)
     citeable = [b for b in blocks if b.kind in {"signal", "forecast", "anomaly"}]
     cache_key = _content_hash(objective=objective, blocks=blocks)
+
+    fmeta_list: List[Dict[str, Any]] = forecast_meta or []
+    any_forecast_attempted = any(
+        bool(m.get("date_col")) for m in fmeta_list
+    )
 
     # Idempotency — same content hash → return cached.
     if cached and cached.get("cache_key") == cache_key:
@@ -603,7 +687,7 @@ async def narrate_analysis(
         objective=objective,
         blocks=blocks,
         workbook_context=workbook_context,
-        forecast_meta=forecast_meta,
+        forecast_meta=fmeta_list,
     )
 
     async def _invoke_once(prompt_text: str) -> Optional[Dict[str, Any]]:
@@ -640,12 +724,13 @@ async def narrate_analysis(
 
     # Track A Phase 3 R3v3 (2026-06-04) — compute the set of required
     # tabs based on which deterministic blocks have data. Forecast tab
-    # is also required when autopick succeeded but the deterministic
-    # forecast vector is empty (so the LLM narrates the attempt).
+    # is also required when autopick succeeded on ANY source even if
+    # the deterministic forecast vector is empty (so the LLM narrates
+    # the attempt).
     has_signals = any(b.kind == "signal" for b in blocks)
     has_forecast_vector = any(b.kind == "forecast" for b in blocks)
     has_anomalies = any(b.kind == "anomaly" for b in blocks)
-    forecast_attempted = bool(forecast_meta and forecast_meta.get("date_col"))
+    forecast_attempted = any_forecast_attempted
     required_tabs: set = set()
     if has_signals:
         required_tabs.add("what_changed")
@@ -718,7 +803,7 @@ async def narrate_analysis(
     completeness_flags = _validate_observation_completeness(
         observations=observations,
         blocks=blocks,
-        forecast_attempted=bool(forecast_meta and forecast_meta.get("date_col")),
+        forecast_attempted=any_forecast_attempted,
     )
 
     result: Dict[str, Any] = {
@@ -731,25 +816,32 @@ async def narrate_analysis(
         "cache_key": cache_key,
         "refused": False,
     }
-    if forecast_meta:
-        # Surface the autopicker choice to the FE for observability.
-        result["forecast_meta"] = {
-            "date_col": forecast_meta.get("date_col"),
-            "value_col": forecast_meta.get("value_col"),
-            "picker_reason": forecast_meta.get("picker_reason", ""),
-            "r2": forecast_meta.get("r2"),  # may be None if engine didn't fit
-        }
-        # Track A Phase 4 (2026-06-04) — low-R² safety-net flag.
-        # Parallel to Phase 3 R3v5's safety-net branch but for forecast
-        # QUALITY rather than forecast PRESENCE. When the engine fit a
-        # model but R² is below `_FORECAST_LOW_R2_THRESHOLD` (default
-        # 0.30 = "noise"), the FE should render the forecast block
-        # with a "low confidence" banner — the data fit but the signal
-        # is weak. Block is NOT dropped (deterministic engine output
-        # preserved); just flagged.
-        r2 = forecast_meta.get("r2")
-        if r2 is not None and r2 < _FORECAST_LOW_R2_THRESHOLD:
-            result["partial_narration_missing_forecast_low_signal"] = True
+    if fmeta_list:
+        # Track A Phase 4 iter-2 — surface the per-source autopicker
+        # decisions to the FE as a List (Tightening 1 invariant).
+        # Single-workbook case still emits a one-element list.
+        result["forecast_meta"] = [
+            {
+                "workbook_index":  m.get("workbook_index"),
+                "filename":        m.get("filename"),
+                "date_col":        m.get("date_col"),
+                "value_col":       m.get("value_col"),
+                "picker_reason":   m.get("picker_reason", ""),
+                "r2":              m.get("r2"),
+                "failure_reason":  m.get("failure_reason"),
+            }
+            for m in fmeta_list
+        ]
+        # Low-R² safety-net flag — fires if ANY successful fit lands
+        # below the threshold. Parallel to Phase 3 R3v5's safety-net
+        # branch but for forecast QUALITY rather than forecast PRESENCE.
+        # Block is NOT dropped (deterministic engine output preserved);
+        # just flagged so the FE can render a "low confidence" banner.
+        for m in fmeta_list:
+            r2 = m.get("r2")
+            if r2 is not None and r2 < _FORECAST_LOW_R2_THRESHOLD:
+                result["partial_narration_missing_forecast_low_signal"] = True
+                break
     # Merge per-tab partial flags into the top-level result dict
     # (NOT inside observations[]). FE consumers read these flags
     # directly off the persisted narration row.

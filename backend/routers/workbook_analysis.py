@@ -788,7 +788,7 @@ async def synthesize_v2_endpoint(
     primary_fmt = blobs[0].get("file_format", "xlsx")
     total_bytes = 0
 
-    for blob in blobs[:MAX_BLOBS]:
+    for blob_idx, blob in enumerate(blobs[:MAX_BLOBS]):
         raw_bytes = base64.b64decode(blob["data_b64"])
         fmt = blob.get("file_format", "xlsx")
         fname = blob.get("filename", "source")
@@ -796,11 +796,17 @@ async def synthesize_v2_endpoint(
         try:
             sheets, matrices = parse_workbook(blob=raw_bytes, file_format=fmt)
         except Exception as exc:  # noqa: BLE001
+            # Swallow contract: a single bad workbook should not
+            # poison the whole synthesis run. We log with exc_info
+            # so the supervisor backend log carries the full
+            # traceback AND emit a `parse_failed: true` source-files
+            # meta entry so the LLM prompt sees the gap.
             logger.warning(
                 "[synthesize_v2] parse_workbook failed for %s: %s",
-                fname, exc,
+                fname, exc, exc_info=True,
             )
             source_files_meta.append({
+                "workbook_index": blob_idx,
                 "source_id": blob.get("source_id"),
                 "filename": fname,
                 "parse_failed": True,
@@ -818,9 +824,12 @@ async def synthesize_v2_endpoint(
             combined_matrices[new_name] = matrices.get(sheet.name, [])
         combined_sheets.extend(renamed_sheets)
         source_files_meta.append({
+            "workbook_index": blob_idx,
             "source_id": blob.get("source_id"),
             "filename": fname,
             "sheet_count": len(renamed_sheets),
+            "stem": stem,
+            "sheets": renamed_sheets,  # transient — stripped before prompt
         })
 
     if not combined_sheets:
@@ -857,28 +866,56 @@ async def synthesize_v2_endpoint(
             all_signals.append(s)
     wba.signals = all_signals
 
-    # Forecast — Bug #30 autopicker now runs across the union of all
-    # sheets from all parsed sources. The picker selects the single
-    # strongest (date, numeric) pair globally; per-source picking is
-    # deferred to Phase 5 (per Pre-Read scope).
-    pick = autopick_forecast_columns(sheets=combined_sheets)
-    forecast_meta_for_prompt: Optional[Dict[str, Any]] = None
-    if pick is not None:
-        forecast_meta_for_prompt = {
-            "date_col":      pick["date_column"],
-            "value_col":     pick["value_column"],
-            "picker_reason": pick.get("picker_reason", ""),
+    # Forecast — Track A Phase 4 iter-2 (2026-06-04): per-source
+    # autopick. The previous iteration ran the picker once across
+    # the union of all sheets and committed only the strongest pair
+    # globally. That violated Tightening 1 (forecast_meta MUST be a
+    # List, one entry per source). Per-source picking lands now:
+    #
+    #   • For each parsed source, run `autopick_forecast_columns`
+    #     against that source's sheet list only.
+    #   • Build `forecast_meta_for_prompt: List[Dict]` with one
+    #     entry per source. Single-workbook case still yields a
+    #     one-element list (NOT a bare dict — Tightening 1 invariant).
+    #   • If `run_forecast` raises, log with exc_info AND attach
+    #     `failure_reason` to that source's meta entry so the LLM
+    #     prompt sees the gap rather than a silent hole.
+    forecast_meta_for_prompt: List[Dict[str, Any]] = []
+    for sf in source_files_meta:
+        if sf.get("parse_failed"):
+            continue
+        per_source_sheets = sf.get("sheets") or []
+        pick = autopick_forecast_columns(sheets=per_source_sheets)
+        if pick is None:
+            forecast_meta_for_prompt.append({
+                "workbook_index": sf.get("workbook_index"),
+                "filename":       sf.get("filename"),
+                "date_col":       None,
+                "value_col":      None,
+                "picker_reason":  "no_eligible_date_numeric_pair",
+                "r2":             None,
+            })
+            continue
+        entry: Dict[str, Any] = {
+            "workbook_index": sf.get("workbook_index"),
+            "filename":       sf.get("filename"),
+            "date_col":       pick["date_column"],
+            "value_col":      pick["value_column"],
+            "picker_reason":  pick.get("picker_reason", ""),
+            "r2":             None,
         }
         sheet_obj = next(
-            (s for s in combined_sheets if s.name == pick["sheet"]), None,
+            (s for s in per_source_sheets if s.name == pick["sheet"]), None,
         )
-        if sheet_obj:
+        if sheet_obj is not None:
             sheet_matrix = combined_matrices.get(pick["sheet"]) or []
             date_idx = next(
-                (i for i, c in enumerate(sheet_obj.columns) if c.name == pick["date_column"]), -1,
+                (i for i, c in enumerate(sheet_obj.columns)
+                 if c.name == pick["date_column"]), -1,
             )
             val_idx = next(
-                (i for i, c in enumerate(sheet_obj.columns) if c.name == pick["value_column"]), -1,
+                (i for i, c in enumerate(sheet_obj.columns)
+                 if c.name == pick["value_column"]), -1,
             )
             try:
                 fc = run_forecast(
@@ -893,15 +930,21 @@ async def synthesize_v2_endpoint(
                 )
                 resolver.resolve_many(fc.citations)
                 wba.forecasts.append(fc)
-                # Phase 4 — pass the engine's R² back through
-                # forecast_meta so narrate_analysis can fire the
-                # low-signal flag when the fit is noisy.
-                forecast_meta_for_prompt["r2"] = float(fc.r2)
+                entry["r2"] = float(fc.r2)
             except (ValueError, CitationUnverifiable) as exc:
+                # Swallow contract: forecast is optional — a bad
+                # (date, value) pair on one source should not 500
+                # the whole synthesize call. We log with exc_info
+                # so the supervisor backend log carries the full
+                # traceback AND surface `failure_reason` on this
+                # source's meta entry so the prompt sees the gap.
                 logger.warning(
-                    "[run_forecast] swallowed exception on (%s, %s): %s",
-                    pick["date_column"], pick["value_column"], exc,
+                    "[run_forecast] swallowed exception for %s on (%s, %s): %s",
+                    sf.get("filename"), pick["date_column"],
+                    pick["value_column"], exc, exc_info=True,
                 )
+                entry["failure_reason"] = f"{type(exc).__name__}: {exc!s:.140}"
+        forecast_meta_for_prompt.append(entry)
 
     # Anomalies — top-6 per numeric column on the FIRST sheet of EACH
     # parsed source. Phase 4 extension: previously only the first
@@ -951,6 +994,15 @@ async def synthesize_v2_endpoint(
     workbook_context_for_prompt: Optional[Dict[str, Any]] = None
     if combined_sheets:
         first_sheet_for_ctx = combined_sheets[0]
+        # Strip the transient `sheets` pydantic list off each
+        # source_files_meta entry before threading into the prompt
+        # context — the prompt only needs filename/sheet_count/
+        # parse_failed for the roster block.
+        sources_for_prompt = [
+            {k: v for k, v in sf.items()
+             if k not in {"sheets", "stem"}}
+            for sf in source_files_meta
+        ]
         workbook_context_for_prompt = {
             "date_columns": [
                 c.name for c in first_sheet_for_ctx.columns if c.kind == "date"
@@ -962,7 +1014,7 @@ async def synthesize_v2_endpoint(
             # so the LLM can attribute cross-file patterns. Each entry
             # is `{filename, sheet_count}`; failed parses are flagged
             # so the LLM doesn't fabricate findings from missing data.
-            "source_files": source_files_meta,
+            "source_files": sources_for_prompt,
         }
 
     narration = await narrate_analysis(
@@ -1067,8 +1119,18 @@ class _AnalysisObjectivePatch(BaseModel):
 
 
 class _AnalysisNoteIn(BaseModel):
-    """Body schema for `POST /v2/analyses/{aid}/notes`."""
-    body: str = Field(..., min_length=1, max_length=4000)
+    """Body schema for `POST /v2/analyses/{aid}/notes`.
+
+    Track A Phase 4 iter-2 (2026-06-04) — `min_length=0` allows the
+    empty-body deletion event per the Pre-Read contract:
+
+        "Empty PATCH ({notes: ''}) appends a {body: ''} entry —
+         explicit deletion is a history event, not a void."
+
+    Idempotency: identical-body re-POST (including empty-body) still
+    no-ops via the handler's tail-entry check.
+    """
+    body: str = Field(..., min_length=0, max_length=4000)
 
 
 @router.get("/v2/analyses")
@@ -1150,6 +1212,14 @@ async def post_analysis_note(
     latest entry for backwards-compat with consumers reading the
     simple shape. `notes` mirror removal scheduled for Phase 5 —
     see MASTER_STATE Section 4.
+
+    Track A Phase 4 iter-2 (2026-06-04) — empty-body deletion
+    contract: an empty-body POST appends `{body: ""}` as an explicit
+    history event (NOT a 422). The BC mirror `notes` is set to `""`
+    on empty append (divergence from G6 `documents.notes` which
+    clears to `null` on empty PATCH — analyses.notes_history is
+    append-only and never null; the empty string IS the event).
+    See Tightening 5 in sprints/TRACK_A_PHASE_4_*.md.
     """
     row = await db.analyses.find_one(
         {"id": aid, "account_id": current["id"]},
@@ -1161,7 +1231,9 @@ async def post_analysis_note(
     notes_history: List[Dict[str, Any]] = row.get("notes_history") or []
     if notes_history and notes_history[-1].get("body") == body.body:
         # Idempotent no-op — return the existing tail entry so the FE
-        # has a stable id to render against.
+        # has a stable id to render against. Applies to both
+        # non-empty bodies AND empty-body re-fires (back-to-back
+        # delete events collapse to one history entry).
         return notes_history[-1]
 
     note = {
@@ -1175,7 +1247,7 @@ async def post_analysis_note(
         {
             "$push": {"notes_history": note},
             "$set": {
-                "notes":            body.body,           # BC mirror
+                "notes":            body.body,           # BC mirror — `""` on delete
                 "notes_updated_at": note["created_at"],  # BC mirror
                 "updated_at":       note["created_at"],
             },

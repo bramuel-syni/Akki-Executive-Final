@@ -30,8 +30,30 @@ _FORECAST_LOW_R2_THRESHOLD = 0.30     # below this → low_signal flag fires
 
 
 def _to_ordinal(v: Any) -> Optional[float]:
+    """Coerce a cell value to an ordinal day-count.
+
+    Track A Phase 4 iter-2 (2026-06-04) — extended to accept string
+    cells (CSV uploads, openpyxl text-typed columns, header-row
+    leakage). Previously only `datetime`/`date` instances were
+    handled, which meant CSV uploads with ISO date strings silently
+    produced zero (date, value) pairs and `run_forecast` raised
+    `need at least 3 pairs`. The exception was then swallowed at the
+    caller, masking the bug (J24 reproducer).
+
+    Coercion grammar (kept in sync with `parser._coerce_value`):
+    `%Y-%m-%d`, `%Y/%m/%d`, `%d/%m/%Y`, `%m/%d/%Y`, `%Y-%m`, `%Y/%m`.
+    """
     if isinstance(v, (datetime, date)):
         return float(v.toordinal())
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return None
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m", "%Y/%m"):
+            try:
+                return float(datetime.strptime(s, fmt).date().toordinal())
+            except ValueError:
+                continue
     return None
 
 

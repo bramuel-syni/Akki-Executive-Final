@@ -207,13 +207,15 @@ async def test_low_r2_flag_fires_on_noisy_fit(monkeypatch):
     monkeypatch.setattr(an, "shield_invoke", fake_invoke)
     result = await an.narrate_analysis(
         workbook_analysis=wa, account_id="acc-x",
-        forecast_meta={
+        forecast_meta=[{
             "date_col": "Date", "value_col": "Sales",
             "picker_reason": "test", "r2": 0.10,  # noisy
-        },
+        }],
     )
     assert result.get("partial_narration_missing_forecast_low_signal") is True
-    assert result["forecast_meta"]["r2"] == 0.10  # preserved
+    # Track A Phase 4 iter-2 — forecast_meta is a List (Tightening 1).
+    assert isinstance(result["forecast_meta"], list)
+    assert result["forecast_meta"][0]["r2"] == 0.10  # preserved
 
 
 @pytest.mark.asyncio
@@ -252,10 +254,10 @@ async def test_low_r2_flag_not_fired_on_clean_fit(monkeypatch):
     monkeypatch.setattr(an, "shield_invoke", fake_invoke)
     result = await an.narrate_analysis(
         workbook_analysis=wa, account_id="acc-x",
-        forecast_meta={
+        forecast_meta=[{
             "date_col": "Date", "value_col": "Sales",
             "picker_reason": "test", "r2": 0.85,  # clean
-        },
+        }],
     )
     assert "partial_narration_missing_forecast_low_signal" not in result
 
@@ -298,10 +300,10 @@ async def test_low_r2_flag_safe_when_r2_none(monkeypatch):
     monkeypatch.setattr(an, "shield_invoke", fake_invoke)
     result = await an.narrate_analysis(
         workbook_analysis=wa, account_id="acc-x",
-        forecast_meta={
+        forecast_meta=[{
             "date_col": "Date", "value_col": "Sales",
             "picker_reason": "test",  # r2 absent
-        },
+        }],
     )
     assert "partial_narration_missing_forecast_low_signal" not in result
 

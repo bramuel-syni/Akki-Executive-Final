@@ -67,7 +67,11 @@ class AnalysisObservation(BaseModel):
 class AnalysisNote(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
-    body: str = Field(..., min_length=1, max_length=4000)
+    # Track A Phase 4 iter-2 (2026-06-04) — empty body permitted to
+    # represent the deletion history event (see post_analysis_note
+    # docstring + sprint memo Tightening 5). Idempotency at the
+    # handler still collapses back-to-back identical empties.
+    body: str = Field(..., min_length=0, max_length=4000)
     created_at: str = Field(default_factory=_iso_now)
     author_account_id: str
 
