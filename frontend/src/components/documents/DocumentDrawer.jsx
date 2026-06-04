@@ -22,7 +22,7 @@
  * Reuse: existing Shadcn Sheet primitive (`components/ui/sheet.jsx`).
  * No new overlay components.
  */
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import {
   FileText, MessageSquare, Sparkles, Brain, Signal, Link2, Share2,
-  Pencil, Save, Loader2, RefreshCw, ChevronLeft, Wand2, X,
+  Pencil, Save, Loader2, RefreshCw, ChevronLeft, Wand2, X, Trash2,
 } from "lucide-react";
 import DocumentDrawerWatermark from "./DocumentDrawerWatermark";
 import ShareDocumentModal from "./ShareDocumentModal";
@@ -341,51 +341,254 @@ function SignalsTab({ doc, contextId }) {
 
 
 // Notes tab ----------------------------------------------------------------
+//
+// Track B Phase B5 G6 (2026-06-04) — autosave rewrite. Replaces the
+// Sprint Z1.2 manual "Save notes" button with debounced autosave +
+// "Last updated: <date>" indicator + delete-with-confirm. QA spec
+// (verbatim figure 26):
+//   • "automatically saved in the background as the user enters or
+//      modifies content"
+//   • "display the date and time the note was last updated eg. Last
+//      updated: 2 June 2026, 10:45 AM"
+//   • "any changes made during editing should continue to be auto-saved"
+//   • "Users should be able to delete a note and a confirmation
+//      prompt should be displayed before deletion"
+//
+// Debounce: 1.0s after last keystroke. In-flight race coalescing via
+// `inflightRef` — drops intermediate keystrokes during a flight, queues
+// ONE re-save if the user typed during the flight. Force-flush on
+// (a) `beforeunload` (browser tab close) via `fetch(keepalive: true)`
+// because `navigator.sendBeacon` is POST-only and our endpoint is
+// PATCH, and (b) component unmount via `useEffect` cleanup (drawer
+// close, doc switch).
+//
+// Delete: `window.confirm` rather than a styled modal — spec-meeting
+// minimum honouring credit-discipline. Upgrade to a styled modal
+// can be a future polish pass.
+const _AUTOSAVE_DEBOUNCE_MS = 1000;
+
+function _formatNotesUpdated(iso) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    // Spec example: "2 June 2026, 10:45 AM"
+    const dayMonth = d.toLocaleDateString("en-GB", {
+      day: "numeric", month: "long", year: "numeric",
+    });
+    const time = d.toLocaleTimeString("en-US", {
+      hour: "numeric", minute: "2-digit", hour12: true,
+    });
+    return `${dayMonth}, ${time}`;
+  } catch {
+    return "";
+  }
+}
+
 function NotesTab({ doc, contextId }) {
-  // Persists notes on `documents.notes` field via PATCH.
-  // Sprint Z1.2 (2026-05-29) — previously sent `{body: undefined, title:
-  // undefined}` so the backend saw an empty diff and returned
-  // `Send at least one field`. Now we send the actual `notes` value
-  // against the dedicated backend field added the same sprint. Tracks
-  // a saved-value snapshot so the green confirmation persists until
-  // the next mutation.
   const [notes, setNotes] = useState(doc?.notes || "");
   const [savedSnapshot, setSavedSnapshot] = useState(doc?.notes || "");
+  const [notesUpdatedAt, setNotesUpdatedAt] = useState(doc?.notes_updated_at || null);
   const [saving, setSaving] = useState(false);
-  const onSave = async () => {
+  const [deleting, setDeleting] = useState(false);
+
+  // Refs for the debounce + in-flight coalescer. Refs (not state)
+  // because we need the LATEST value inside async callbacks without
+  // re-binding the timer / event listener on every keystroke.
+  const debounceTimerRef = useRef(null);
+  const inflightRef = useRef(false);
+  const queuedRef = useRef(false);
+  const notesRef = useRef(notes);
+  const savedRef = useRef(savedSnapshot);
+  const dirtyRef = useRef(false);
+  useEffect(() => { notesRef.current = notes; }, [notes]);
+  useEffect(() => { savedRef.current = savedSnapshot; }, [savedSnapshot]);
+  useEffect(() => { dirtyRef.current = (notes || "") !== (savedSnapshot || ""); }, [notes, savedSnapshot]);
+
+  // Re-hydrate when the user switches to a different doc.
+  useEffect(() => {
+    setNotes(doc?.notes || "");
+    setSavedSnapshot(doc?.notes || "");
+    setNotesUpdatedAt(doc?.notes_updated_at || null);
+  }, [doc?.id, doc?.notes, doc?.notes_updated_at]);
+
+  // Core save — single async path used by debounce, force-flush,
+  // delete-confirm. `nextNotes` is the value to send (current
+  // typed value for autosave; empty string for delete).
+  const performSave = useCallback(async (nextNotes) => {
+    if (inflightRef.current) {
+      // Coalesce — drop the intermediate, mark one queued. The
+      // current flight will re-check `notesRef` on completion and
+      // fire one more save if dirty.
+      queuedRef.current = true;
+      return;
+    }
+    inflightRef.current = true;
     setSaving(true);
     try {
-      await api.patch(`/contexts/${contextId}/documents/${doc.id}`, { notes });
-      setSavedSnapshot(notes);
-      toast.success("Notes saved.");
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setSaving(false); }
+      const resp = await api.patch(
+        `/contexts/${contextId}/documents/${doc.id}`,
+        { notes: nextNotes },
+      );
+      setSavedSnapshot(nextNotes);
+      // Backend returns the sanitised doc with `notes_updated_at`
+      // populated. Use the server timestamp as the source of truth.
+      const serverTs = resp?.data?.notes_updated_at;
+      setNotesUpdatedAt(serverTs || new Date().toISOString());
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      inflightRef.current = false;
+      setSaving(false);
+      // Coalesced re-save if the user typed during the flight.
+      if (queuedRef.current) {
+        queuedRef.current = false;
+        const latest = notesRef.current || "";
+        if (latest !== savedRef.current) {
+          // Re-enter performSave; inflightRef is now false so it
+          // will fire (not coalesce again).
+          performSave(latest);
+        }
+      }
+    }
+  }, [contextId, doc?.id]);
+
+  // Debounced autosave on textarea change.
+  const onTextChange = (e) => {
+    const next = e.target.value;
+    setNotes(next);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      const current = notesRef.current || "";
+      if (current !== savedRef.current) {
+        performSave(current);
+      }
+    }, _AUTOSAVE_DEBOUNCE_MS);
   };
+
+  // Force-flush on browser tab close. `fetch(keepalive: true)` is
+  // the spec-compliant way to fire a PATCH that survives unload
+  // (sendBeacon is POST-only). Bypass the `api` axios helper so we
+  // can set `keepalive`; reuse the same withCredentials + JSON
+  // shape. CSRF: documents PATCH does not require X-CSRF-Token
+  // (see require_context_membership wiring); cookie auth alone is
+  // sufficient.
+  useEffect(() => {
+    if (!contextId || !doc?.id) return;
+    const onBeforeUnload = () => {
+      if (!dirtyRef.current) return;
+      try {
+        const apiBase = process.env.REACT_APP_BACKEND_URL || "";
+        // eslint-disable-next-line no-restricted-syntax -- axios/api helper does not support fetch's `keepalive: true`, which is required for a beforeunload PATCH to survive page unload. This is the documented escape-hatch case from /app/memory/sprints/LINT_API_CLIENT_RULE.md (Patch 24B). Fire-and-forget; no response handling.
+        fetch(
+          `${apiBase}/api/contexts/${contextId}/documents/${doc.id}`,
+          {
+            method: "PATCH",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ notes: notesRef.current || "" }),
+            keepalive: true,
+          },
+        );
+      } catch {
+        /* swallow — best-effort */
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [contextId, doc?.id]);
+
+  // Force-flush on unmount (drawer close / doc switch). Fire and
+  // forget — `useEffect` cleanup runs synchronously, so we don't
+  // `await` the in-page PATCH. The component is already unmounting,
+  // but the request lives on in the network stack.
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      if (dirtyRef.current && contextId && doc?.id) {
+        const latest = notesRef.current || "";
+        api.patch(
+          `/contexts/${contextId}/documents/${doc.id}`,
+          { notes: latest },
+        ).catch(() => { /* swallow — unmount, no user surface */ });
+      }
+    };
+  }, [contextId, doc?.id]);
+
+  const onDelete = async () => {
+    if (!window.confirm("Delete this note? This cannot be undone.")) return;
+    // Cancel any pending debounce so we don't race the delete.
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    setDeleting(true);
+    try {
+      const resp = await api.patch(
+        `/contexts/${contextId}/documents/${doc.id}`,
+        { notes: "" },
+      );
+      setNotes("");
+      setSavedSnapshot("");
+      const serverTs = resp?.data?.notes_updated_at;
+      setNotesUpdatedAt(serverTs || new Date().toISOString());
+      toast.success("Note deleted.");
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const dirty = (notes || "") !== (savedSnapshot || "");
+  const lastUpdatedLabel = notesUpdatedAt
+    ? `Last updated: ${_formatNotesUpdated(notesUpdatedAt)}`
+    : "";
+  const showDelete = !!savedSnapshot && !deleting && !dirty;
+
   return (
     <div data-testid="drawer-notes-tab">
       <p className="text-[11px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-3">Your notes</p>
       <textarea
         value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        placeholder="Your notes about this document…"
+        onChange={onTextChange}
+        placeholder="Your notes about this document… (autosaves as you type)"
         rows={10}
         className="w-full border border-[var(--rule)] rounded-sm px-3 py-2 text-[13px] text-[var(--ink)] font-sans focus:outline-none focus:border-[var(--ink)]"
         data-testid="drawer-notes-textarea"
       />
-      <div className="mt-2 flex items-center justify-end gap-3">
-        {!dirty && savedSnapshot && !saving && (
-          <span
-            className="text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--ned-purple)]"
-            data-testid="drawer-notes-saved-indicator"
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-h-[20px]">
+          {saving && (
+            <span
+              className="text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--muted)] inline-flex items-center gap-1.5"
+              data-testid="drawer-notes-saving-indicator"
+            >
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Saving…
+            </span>
+          )}
+          {!saving && lastUpdatedLabel && (
+            <span
+              className="text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--ned-purple)]"
+              data-testid="drawer-notes-last-updated"
+            >
+              {lastUpdatedLabel}
+            </span>
+          )}
+        </div>
+        {showDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--muted)] hover:text-[var(--ink)] inline-flex items-center gap-1.5"
+            data-testid="drawer-notes-delete"
           >
-            Saved
-          </span>
+            <Trash2 className="w-3 h-3" />
+            Delete note
+          </button>
         )}
-        <Button onClick={onSave} disabled={saving || !dirty} size="sm" data-testid="drawer-notes-save" className="rounded-sm">
-          {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <Save className="w-3 h-3 mr-1.5" />}
-          Save notes
-        </Button>
       </div>
     </div>
   );

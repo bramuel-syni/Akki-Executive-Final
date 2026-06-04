@@ -92,6 +92,13 @@ def sanitize_doc(d: Dict[str, Any]) -> Dict[str, Any]:
         # work-studio compile and cycle-pack export). Empty list /
         # null → Drawer renders the fallback line.
         "source_doc_ids": d.get("source_doc_ids") or [],
+        # Sprint Z1.2 (2026-05-29) + Track B Phase B5 G6 (2026-06-04):
+        # notes + per-notes timestamp for the drawer's Notes tab.
+        # `notes_updated_at` is set only on notes-bearing PATCHes; it
+        # surfaces as the FE's "Last updated: …" indicator and does
+        # NOT churn on unrelated edits (title/category/audience).
+        "notes":              d.get("notes"),
+        "notes_updated_at":   d.get("notes_updated_at"),
     }
 
 
@@ -892,6 +899,16 @@ async def patch_document(
         # Empty string clears the field; non-empty stores trimmed.
         notes_clean = body.notes.strip()[:8000]
         update["notes"] = notes_clean or None
+        # Track B Phase B5 G6 (2026-06-04) — per-notes timestamp so the
+        # FE's "Last updated: …" indicator reflects WHEN notes were
+        # saved, not when ANY field changed. `updated_at` (set at the
+        # top of this fn) churns on title/category/audience edits too;
+        # `notes_updated_at` only changes when notes do, matching the
+        # QA spec's literal "the date and time the note was last
+        # updated" requirement. Also set on the delete path
+        # (`notes_clean == ""`) so the FE can render "Last updated: …"
+        # against the post-delete moment.
+        update["notes_updated_at"] = update["updated_at"]
     if len(update) == 1:
         raise HTTPException(status_code=400, detail="Send at least one field")
     await db.documents.update_one({"id": doc_id, "context_id": context_id}, {"$set": update})

@@ -164,10 +164,25 @@ def test_documents_listing_accepts_upload_origin():
 
 
 def test_frontend_drawer_notes_payload_is_correct():
-    """The DocumentDrawer's notes save MUST send {notes} — not the
-    previous {body: undefined, title: undefined} bug."""
+    """The DocumentDrawer's notes save MUST send `{notes}` — not the
+    previous `{body: undefined, title: undefined}` bug.
+
+    Track B Phase B5 G6 (2026-06-04): the literal `{ notes }`
+    shorthand was replaced with explicit `{ notes: <value> }`
+    payloads (autosave uses `nextNotes`, delete uses `""`, force-
+    flush uses `latest`). The PATCH contract is unchanged — only
+    the source-text shape evolved. Test now asserts the contract
+    (notes-bearing PATCH to the doc endpoint), not the shorthand.
+    """
     src = (REPO / "frontend" / "src" / "components" / "documents" / "DocumentDrawer.jsx").read_text(encoding="utf-8")
-    assert 'api.patch(`/contexts/${contextId}/documents/${doc.id}`, { notes })' in src
+    # The PATCH endpoint must still be wired.
+    assert "/contexts/${contextId}/documents/${doc.id}" in src
+    # Some form of notes payload must be present (any of the G6
+    # variants — shorthand `{ notes }`, explicit `{ notes: …` —
+    # or, defensively, the Z1.2 original shorthand).
+    assert any(token in src for token in (
+        "{ notes }", "{ notes:", "{notes:", "{notes}",
+    )), "DocumentDrawer must still PATCH a notes payload"
 
 
 def test_frontend_drawer_generate_brief_no_longer_navigates_to_solva():
