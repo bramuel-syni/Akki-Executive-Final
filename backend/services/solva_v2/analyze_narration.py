@@ -205,13 +205,18 @@ def _build_prompt(
         if has_forecast_vector:
             fc_body = "\n".join(forecast_lines) + "\n"
         else:
+            # Track A Phase 3 R3v4 (2026-06-04) — the prior copy
+            # contained the all-caps sentinel "EMPTY" which Claude
+            # echoed verbatim into prose ("...EMPTY attempted to model
+            # the relationship..."). Rewritten as a humanised sentence
+            # with no sentinel tokens.
             fc_body = (
-                "Deterministic forecast vector was EMPTY (the engine "
-                "could not fit a line on the chosen pair). Narrate "
-                f"what's likely next for ({forecast_meta['date_col']}, "
-                f"{forecast_meta['value_col']}) based on the SIGNALS + "
-                "ANOMALIES BLOCKS above/below in plain business "
-                "language; DO NOT fabricate numbers.\n"
+                "The deterministic forecast engine could not fit a "
+                f"linear model to ({forecast_meta['date_col']}, "
+                f"{forecast_meta['value_col']}) on this workbook. "
+                "Narrate what is likely next using the SIGNALS and "
+                "ANOMALIES BLOCKS above and below in plain business "
+                "language; DO NOT fabricate any numeric projection.\n"
             )
         forecast_block = fc_header + fc_body
     else:
@@ -438,6 +443,55 @@ def _extract_json_payload(raw: str) -> Optional[str]:
     return None
 
 
+def _validate_observation_completeness(
+    *,
+    observations: List[Dict[str, Any]],
+    blocks: List["_DetBlock"],
+    forecast_attempted: bool,
+) -> Dict[str, bool]:
+    """Track A Phase 3 R3v4 (2026-06-04) — post-Shield completeness
+    validator.
+
+    Walks the deterministic block set and the final observation list
+    (post voice-lint, post banned-jargon, post citation-resolver) and
+    returns a dict of `partial_narration_missing_{tab}: true` flags
+    for every required tab whose observation is absent.
+
+    Contract:
+      • Block has data → tab is required.
+      • `forecast_attempted` (autopicker succeeded even if the
+        deterministic vector was empty) → `whats_likely_next` is
+        required so the FE always renders a forecast surface.
+      • Missing observation when block populated → flag fires.
+      • Backwards-compat alias `partial_narration_missing_forecast`
+        is set when `whats_likely_next` is missing (R3v2 consumers).
+
+    No silent empty — every required tab without a backing
+    observation surfaces a flag the FE can render.
+    """
+    required_tabs: set = set()
+    if any(b.kind == "signal" for b in blocks):
+        required_tabs.add("what_changed")
+    if any(b.kind == "forecast" for b in blocks) or forecast_attempted:
+        required_tabs.add("whats_likely_next")
+    if any(b.kind == "anomaly" for b in blocks):
+        required_tabs.add("whats_odd")
+
+    present: set = set()
+    for o in observations:
+        tab = o.get("tab") if isinstance(o, dict) else None
+        if tab in {"what_changed", "whats_likely_next", "whats_odd"}:
+            present.add(tab)
+
+    flags: Dict[str, bool] = {}
+    for tab in (required_tabs - present):
+        flags[f"partial_narration_missing_{tab}"] = True
+    # Backwards-compat alias for R3v2 consumers.
+    if "whats_likely_next" in (required_tabs - present):
+        flags["partial_narration_missing_forecast"] = True
+    return flags
+
+
 async def narrate_analysis(
     *,
     workbook_analysis: WorkbookAnalysis,
@@ -596,15 +650,15 @@ async def narrate_analysis(
     # Citation resolver — drops out-of-range references.
     observations = _resolve_citations(observations, blocks)
 
-    # Track A Phase 3 R3v3 — per-tab `partial_narration_missing_{tab}`
-    # flags so the FE can render "this tab not narrated this run" per
-    # surface. `forecast_required` is preserved as a synonym for
-    # `whats_likely_next` for backward-compat with R3v2 consumers.
-    final_present: set = set()
-    for o in observations:
-        if o.get("tab") in {"what_changed", "whats_likely_next", "whats_odd"}:
-            final_present.add(o["tab"])
-    final_missing = required_tabs - final_present
+    # Track A Phase 3 R3v4 (2026-06-04) — explicit post-Shield
+    # completeness validator. Walks deterministic blocks vs final
+    # observation list and emits per-tab `partial_narration_missing_
+    # {tab}` flags. See `_validate_observation_completeness` docstring.
+    completeness_flags = _validate_observation_completeness(
+        observations=observations,
+        blocks=blocks,
+        forecast_attempted=bool(forecast_meta and forecast_meta.get("date_col")),
+    )
 
     result: Dict[str, Any] = {
         "headline": headline,
@@ -623,11 +677,10 @@ async def narrate_analysis(
             "value_col": forecast_meta.get("value_col"),
             "picker_reason": forecast_meta.get("picker_reason", ""),
         }
-    # Per-tab partial flags. Also keep the R3v2-named flag for BC.
-    for tab in final_missing:
-        result[f"partial_narration_missing_{tab}"] = True
-    if "whats_likely_next" in final_missing:
-        result["partial_narration_missing_forecast"] = True
+    # Merge per-tab partial flags into the top-level result dict
+    # (NOT inside observations[]). FE consumers read these flags
+    # directly off the persisted narration row.
+    result.update(completeness_flags)
     return result
 
 

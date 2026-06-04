@@ -150,16 +150,17 @@ Status legend:
 
 ## Section 6 — Active Phase
 
-Track A Phase 3 R3v3 (plumbing fix + prompt all-tabs requirement) shipped 2026-06-04T05:37:00Z. Awaiting tester re-verify on J19 + J20 ONLY. Six other phases already tester-PASS (Section 4).
+Track A Phase 3 R3v4 (final two surgical fixes — EMPTY-sentinel leak + explicit post-Shield validator) shipped 2026-06-04T05:50:00Z. Awaiting tester re-verify on J19 + J20 ONLY. Six other phases already tester-PASS (Section 4).
 
 ---
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T05:37:00Z (Track A Phase 3 R3v3 plumbing fix — `forecast_meta_for_prompt` reorder + `[run_forecast] swallowed exception` logger.warning + `value_spread` uses minv/maxv not 6-sample preview + prompt requires ALL non-empty tabs + per-tab partial flags + anomaly call-site fix).
-- **Agent:** track-a-phase3-r3v3-plumbing-and-all-tabs.
-- **Mode:** Surgical fix. R3v2 plumbing missed three things: (1) `forecast_meta` was assigned inside `try/except` so a swallowed run_forecast exception dropped the autopicker decision before the prompt; (2) `value_spread=0.00` because the truncated 6-sample preview hid the real range; (3) anomaly call-site in synthesize_v2 used wrong kwargs → silent swallow → `whats_odd` never had block data. All fixed; prompt now requires tab-per-block.
-- **Combined memo:** `sprints/TRACK_A_PHASE3_R3V3_PLUMBING_AND_ALL_TABS.md`
-- **Live wire sample (Date + 3 numerics):** `/tmp/track_a_phase3_r3v2_live_sample.py` — headline "One month saw refunds spike to 17 times the typical level, while underlying sales climbed steadily toward a projected 36% gain over two years." All 3 tabs populated (`what_changed`, `whats_likely_next`, `whats_odd`). `forecast_meta = {date_col: month, value_col: actual_sales, picker_reason: non_null_count=24, value_spread=5240.00}` (was 0.00 in R3v2). `[autopick] selected (month, actual_sales) from sheet 'Monthly' (non_null_count=24, value_spread=5240.00)`.
-- **Lockdown:** `backend/tests/test_track_a_phase3_prompt_fix.py` 10 functions / 13 pytest cases PASS (≤10 R4 cap on test functions honoured). Combined with narration + v1 byte-identical + workbook-analyze: **58/58 PASS**.
+- **Written:** 2026-06-04T05:50:00Z (Track A Phase 3 R3v4 — replaced `EMPTY` sentinel with humanised "could not fit a linear model" prose in `_build_prompt` empty-forecast branch; extracted post-Shield completeness validator into `_validate_observation_completeness` helper that walks deterministic blocks vs final observations and sets per-tab `partial_narration_missing_{tab}` flags at the top level — guarantees no silent empty when block populated but Claude omitted the tab).
+- **Agent:** track-a-phase3-r3v4-empty-and-validator.
+- **Mode:** Two-bug surgical fix. R3v3 missed two tester-visible bugs: (1) the empty-forecast prompt branch leaked the all-caps sentinel `EMPTY` into LLM input which Claude echoed into prose; (2) no explicit post-Shield validator — flag computation was inline and orchestrator-invisible.
+- **Combined memo:** `sprints/TRACK_A_PHASE3_R3V4_EMPTY_AND_VALIDATOR.md`
+- **Live wire (HAPPY PATH 24-month CSV w/ Date + 3 numerics):** All 3 tabs populated; headline "One month's refunds spiked to seventeen times the typical level, while underlying sales grew steadily toward a projected 17,000 next period."; `forecast_meta.value_spread=5240.00`; `EMPTY_token_leaked_in_prose: false`; no partial flags.
+- **Live wire (EMPTY-VECTOR BRANCH noisy-date CSV):** No `EMPTY` token leak; validator fired `partial_narration_missing_what_changed: true`; refused-to-decide path honoured.
+- **Lockdown:** `backend/tests/test_track_a_phase3_prompt_fix.py` 10 functions / 13 pytest cases PASS (≤10 R4 cap honoured via test 5+6 merge + test 4 rewrite to validator focus). Combined with narration + v1 byte-identical + workbook-analyze: **58/58 PASS**.
 - **Track A Phase 3 stays 🟡** until tester re-runs J19 + J20.
