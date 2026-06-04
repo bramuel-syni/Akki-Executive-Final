@@ -167,7 +167,15 @@ async def test_synthesize_idempotent_cache_key(transport, monkeypatch):
         return _shield_response({
             "headline": "Cached read.",
             "observations": [
-                {"tab": "what_changed", "title": "Stable", "body": "Variance held.",
+                {"tab": "what_changed", "title": "Stable", "body": "Run rate held flat.",
+                 "evidence_citation_indices": [0]},
+                # R3v3: each non-empty deterministic block requires its
+                # matching tab; include all three so no retry fires and
+                # the idempotency assertion holds.
+                {"tab": "whats_likely_next", "title": "Trend extends",
+                 "body": "If the pattern holds, next quarter clears prior plan.",
+                 "evidence_citation_indices": [0]},
+                {"tab": "whats_odd", "title": "Refund spike", "body": "One month broke pattern.",
                  "evidence_citation_indices": [0]},
             ],
         })

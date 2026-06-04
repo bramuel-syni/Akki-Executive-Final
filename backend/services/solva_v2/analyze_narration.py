@@ -127,30 +127,53 @@ def _build_prompt(
 ) -> str:
     """Build the LLM prompt.
 
-    Track A Phase 3 R3v2 (2026-06-04) — the prior prompt told Claude
-    the evidence list was the entire context; Claude could not see
-    that the spreadsheet's first column was a date axis (months/
-    quarters) rather than an entity axis (locations/customers).
-    Result: narration described rows as "locations". This version:
+    Track A Phase 3 R3v3 (2026-06-04) — surfaces SIGNALS BLOCK /
+    FORECAST BLOCK / ANOMALIES BLOCK explicitly, and REQUIREs the
+    matching observation tab for each non-empty block:
 
-      1. Injects a `workbook_context` block that explicitly names
-         the date column(s) + numeric column(s) so the model knows
-         rows are points in time, not entities.
-      2. Injects an explicit `FORECAST INPUT` block when forecasts
-         exist + REQUIRES a `whats_likely_next` observation in
-         that case.
-      3. Strengthens tone to McKinsey-memo (one concrete example).
-      4. Bans statistical jargon (σ, standard deviation, percentile,
-         variance) from headline + observation body — Sources tab
-         keeps the raw stats.
+      • Signals exist → require `what_changed` observation(s).
+      • Forecast attempted (autopick succeeded) → require
+        `whats_likely_next` observation, even if the deterministic
+        forecast vector was empty (engine couldn't fit a line).
+      • Anomalies exist → require `whats_odd` observation(s).
+
+    Each block that is empty surfaces an explicit "no X — omit the
+    corresponding tab" line so Claude doesn't fabricate tabs that
+    have no evidence.
     """
     objective_line = objective.strip() or "(none provided)"
-    evidence_lines = []
+
+    # Partition deterministic evidence by kind so the prompt can
+    # surface each as a labeled block. Indices are preserved across
+    # the flat list so observations can still cite by index.
+    signal_lines: List[str] = []
+    forecast_lines: List[str] = []
+    anomaly_lines: List[str] = []
+    sim_lines: List[str] = []
     for i, b in enumerate(blocks):
-        evidence_lines.append(
-            f"[{i}] kind={b.kind} :: {b.detail}  (cite={b.citation.get('cell_range') or 'n/a'})"
+        line = (
+            f"[{i}] {b.detail}  (cite={b.citation.get('cell_range') or 'n/a'})"
         )
-    evidence_joined = "\n".join(evidence_lines) if evidence_lines else "(none)"
+        if b.kind == "signal":
+            signal_lines.append(line)
+        elif b.kind == "forecast":
+            forecast_lines.append(line)
+        elif b.kind == "anomaly":
+            anomaly_lines.append(line)
+        elif b.kind == "simulation":
+            sim_lines.append(line)
+
+    has_signals = bool(signal_lines)
+    has_forecast_vector = bool(forecast_lines)
+    has_anomalies = bool(anomaly_lines)
+
+    # Forecast tab is required when EITHER (a) the deterministic
+    # forecast vector is present OR (b) the autopicker succeeded but
+    # the engine returned no projections — in case (b) the prompt
+    # tells Claude to narrate what the (date_col, value_col) attempt
+    # implies based on signals + anomalies.
+    forecast_attempted = bool(forecast_meta and forecast_meta.get("date_col"))
+    forecast_required = has_forecast_vector or forecast_attempted
 
     # ── Workbook context block ────────────────────────────────
     ctx = workbook_context or {}
@@ -168,22 +191,67 @@ def _build_prompt(
             f"Numeric columns: {', '.join(numeric_cols) or '(none)'}\n"
         )
 
-    # ── Forecast input block ───────────────────────────────────
-    forecast_required = bool(forecast_meta and forecast_meta.get("date_col"))
-    forecast_block = ""
-    if forecast_required:
+    # ── Three labeled deterministic blocks ────────────────────
+    signals_block = "\nSIGNALS BLOCK\n" + (
+        "\n".join(signal_lines) if signal_lines else "(no signals — OMIT `what_changed` tab)"
+    ) + "\n"
+    if forecast_attempted:
+        fc_header = (
+            f"\nFORECAST BLOCK\n"
+            f"Autopicker chose ({forecast_meta['date_col']}, "
+            f"{forecast_meta['value_col']}); "
+            f"reason: {forecast_meta.get('picker_reason', 'n/a')}.\n"
+        )
+        if has_forecast_vector:
+            fc_body = "\n".join(forecast_lines) + "\n"
+        else:
+            fc_body = (
+                "Deterministic forecast vector was EMPTY (the engine "
+                "could not fit a line on the chosen pair). Narrate "
+                f"what's likely next for ({forecast_meta['date_col']}, "
+                f"{forecast_meta['value_col']}) based on the SIGNALS + "
+                "ANOMALIES BLOCKS above/below in plain business "
+                "language; DO NOT fabricate numbers.\n"
+            )
+        forecast_block = fc_header + fc_body
+    else:
         forecast_block = (
-            "\nFORECAST INPUT\n"
-            f"A forecast has been computed on ({forecast_meta['date_col']}, "
-            f"{forecast_meta['value_col']}). The autopicker chose this "
-            f"pair because: {forecast_meta.get('picker_reason', 'highest signal')}.\n"
-            "REQUIREMENT: Because forecast input is present above, your "
-            "`observations` array MUST contain at least one entry whose "
-            "`tab` is exactly `whats_likely_next`. That observation must "
-            "narrate the forecast projection in plain business language "
-            "(e.g. 'if the trend holds, Q1 lands 12% below plan'). Do NOT "
-            "skip this — the user explicitly asked for forward-looking "
-            "narration.\n"
+            "\nFORECAST BLOCK\n"
+            "(no forecast attempted — OMIT `whats_likely_next` tab)\n"
+        )
+    anomalies_block = "\nANOMALIES BLOCK\n" + (
+        "\n".join(anomaly_lines) if anomaly_lines else "(no anomalies — OMIT `whats_odd` tab)"
+    ) + "\n"
+    sims_block = ""
+    if sim_lines:
+        sims_block = "\nSIMULATIONS BLOCK (supporting evidence; group under `whats_likely_next`)\n" + "\n".join(sim_lines) + "\n"
+
+    # ── REQUIREMENTS line (per-block) ────────────────────────
+    req_parts: List[str] = []
+    if has_signals:
+        req_parts.append(
+            "`what_changed` (at least one entry; cite the SIGNALS BLOCK)"
+        )
+    if forecast_required:
+        req_parts.append(
+            "`whats_likely_next` (at least one entry; narrate the FORECAST BLOCK)"
+        )
+    if has_anomalies:
+        req_parts.append(
+            "`whats_odd` (at least one entry; cite the ANOMALIES BLOCK)"
+        )
+    if req_parts:
+        required_tabs_line = (
+            "REQUIREMENTS — your `observations` array MUST contain "
+            + "; AND ".join(req_parts)
+            + ". Omitting a required tab when its block has data is a "
+              "contract violation. The bottom-line headline is "
+              "mandatory regardless."
+        )
+    else:
+        required_tabs_line = (
+            "REQUIREMENTS — every deterministic block is empty; return "
+            '`{"headline": "", "observations": []}`.'
         )
 
     return f"""You are a strategy partner writing the bottom-line read-out for a
@@ -211,9 +279,8 @@ Bad headline example (rejected):
    the standard deviation above average."
 
 User objective: {objective_line}
-{workbook_ctx_block}{forecast_block}
-Deterministic evidence (each numbered; cite by index):
-{evidence_joined}
+{workbook_ctx_block}{signals_block}{forecast_block}{anomalies_block}{sims_block}
+{required_tabs_line}
 
 Return STRICT JSON with this shape (no markdown fences):
 {{
@@ -230,10 +297,8 @@ Return STRICT JSON with this shape (no markdown fences):
 
 Rules:
 - Output JSON only (no prose around it).
-- Group: what_changed = signals; whats_likely_next = forecasts + simulations; whats_odd = anomalies.
-- Each observation MUST reference at least one evidence index from the list above.
-- If the evidence list is empty or contains no signals/forecasts/anomalies, return
-  {{"headline": "", "observations": []}}.
+- Group: what_changed = signals; whats_likely_next = forecast + simulations; whats_odd = anomalies.
+- Each observation MUST reference at least one evidence index from the deterministic blocks above.
 - Do not use the words "suggest", "recommend", "should", "advise", or "I think".
 """
 
@@ -458,33 +523,52 @@ async def narrate_analysis(
             "refusal_reason": "shield_invoke_failed",
         }
 
-    forecast_required = bool(forecast_meta and forecast_meta.get("date_col"))
+    # Track A Phase 3 R3v3 (2026-06-04) — compute the set of required
+    # tabs based on which deterministic blocks have data. Forecast tab
+    # is also required when autopick succeeded but the deterministic
+    # forecast vector is empty (so the LLM narrates the attempt).
+    has_signals = any(b.kind == "signal" for b in blocks)
+    has_forecast_vector = any(b.kind == "forecast" for b in blocks)
+    has_anomalies = any(b.kind == "anomaly" for b in blocks)
+    forecast_attempted = bool(forecast_meta and forecast_meta.get("date_col"))
+    required_tabs: set = set()
+    if has_signals:
+        required_tabs.add("what_changed")
+    if has_forecast_vector or forecast_attempted:
+        required_tabs.add("whats_likely_next")
+    if has_anomalies:
+        required_tabs.add("whats_odd")
 
-    # Bounded retry (max 1) — if forecast required but LLM omitted
-    # the `whats_likely_next` observation, prepend a stern reminder
-    # and call once more. After that, surface the partial-flag.
-    if forecast_required:
-        obs_list = parsed.get("observations") or []
-        has_next = any(
-            isinstance(o, dict) and o.get("tab") == "whats_likely_next"
-            for o in obs_list
-        )
-        if not has_next:
-            retry_prompt = (
-                "PREVIOUS ATTEMPT MISSED THE FORECAST REQUIREMENT.\n"
-                "Your prior response did NOT include any observation "
-                "with `tab` = `whats_likely_next`. The forecast input "
-                "is present and MUST be narrated. Retry now and ensure "
-                "at least one observation has `tab` = `whats_likely_next`.\n\n"
-            ) + prompt
-            retry_parsed = await _invoke_once(retry_prompt)
-            if retry_parsed is not None:
-                retry_obs = retry_parsed.get("observations") or []
-                if any(
-                    isinstance(o, dict) and o.get("tab") == "whats_likely_next"
-                    for o in retry_obs
-                ):
-                    parsed = retry_parsed
+    def _tabs_present(p: Dict[str, Any]) -> set:
+        out: set = set()
+        for o in p.get("observations") or []:
+            if isinstance(o, dict) and o.get("tab") in {
+                "what_changed", "whats_likely_next", "whats_odd",
+            }:
+                out.add(o["tab"])
+        return out
+
+    # Bounded retry (max 1 per synthesize call total). If ANY required
+    # tab is missing, retry once with a stern reminder listing the
+    # specific missing tabs.
+    missing = required_tabs - _tabs_present(parsed)
+    if missing:
+        retry_prompt = (
+            "PREVIOUS ATTEMPT VIOLATED THE REQUIRED-TABS CONTRACT.\n"
+            f"Your prior response was missing observations for: "
+            f"{sorted(missing)}. Each missing tab has deterministic "
+            "block data above and MUST be narrated. Retry now and "
+            "include at least one observation for EACH of: "
+            f"{sorted(required_tabs)}.\n\n"
+        ) + prompt
+        retry_parsed = await _invoke_once(retry_prompt)
+        if retry_parsed is not None:
+            # Accept the retry only if it materially closes the gap
+            # (covers MORE of the required tabs than the first try).
+            retry_present = _tabs_present(retry_parsed)
+            first_present = _tabs_present(parsed)
+            if len(retry_present & required_tabs) > len(first_present & required_tabs):
+                parsed = retry_parsed
 
     headline = str(parsed.get("headline") or "").strip()
     observations = parsed.get("observations") or []
@@ -512,12 +596,15 @@ async def narrate_analysis(
     # Citation resolver — drops out-of-range references.
     observations = _resolve_citations(observations, blocks)
 
-    # Did the final accepted narration honour the forecast contract?
-    partial_missing_forecast = False
-    if forecast_required:
-        partial_missing_forecast = not any(
-            o.get("tab") == "whats_likely_next" for o in observations
-        )
+    # Track A Phase 3 R3v3 — per-tab `partial_narration_missing_{tab}`
+    # flags so the FE can render "this tab not narrated this run" per
+    # surface. `forecast_required` is preserved as a synonym for
+    # `whats_likely_next` for backward-compat with R3v2 consumers.
+    final_present: set = set()
+    for o in observations:
+        if o.get("tab") in {"what_changed", "whats_likely_next", "whats_odd"}:
+            final_present.add(o["tab"])
+    final_missing = required_tabs - final_present
 
     result: Dict[str, Any] = {
         "headline": headline,
@@ -536,7 +623,10 @@ async def narrate_analysis(
             "value_col": forecast_meta.get("value_col"),
             "picker_reason": forecast_meta.get("picker_reason", ""),
         }
-    if partial_missing_forecast:
+    # Per-tab partial flags. Also keep the R3v2-named flag for BC.
+    for tab in final_missing:
+        result[f"partial_narration_missing_{tab}"] = True
+    if "whats_likely_next" in final_missing:
         result["partial_narration_missing_forecast"] = True
     return result
 

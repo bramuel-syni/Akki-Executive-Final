@@ -150,15 +150,16 @@ Status legend:
 
 ## Section 6 — Active Phase
 
-Track A Phase 3 R3v2 (prompt-layer surgical fix) shipped 2026-06-04T05:18:00Z. Awaiting tester re-verify on J19 + J20 ONLY. Six other phases already tester-PASS (Section 4).
+Track A Phase 3 R3v3 (plumbing fix + prompt all-tabs requirement) shipped 2026-06-04T05:37:00Z. Awaiting tester re-verify on J19 + J20 ONLY. Six other phases already tester-PASS (Section 4).
 
 ---
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T05:18:21Z (Track A Phase 3 R3v2 prompt-layer surgical fix — temporal-axis context + REQUIREs `whats_likely_next` + autopicker meta surfacing + McKinsey-tone + banned-headline-jargon lockdown + bounded retry).
-- **Agent:** track-a-phase3-r3v2-prompt-surgical-fix.
-- **Mode:** Surgical fix. 6 phases flipped 🟡 → ✅ per tester verdicts (Track A Phase 1 + Phase 2; Track B Phase B1 incl. B1b + B2 + B3). Track A Phase 3 stays 🟡 pending tester J19 + J20 re-verify.
-- **Combined memo:** `sprints/TRACK_A_PHASE3_R3V2_PROMPT_SURGICAL_FIX.md`
-- **Live wire sample:** `/tmp/track_a_phase3_r3v2_live_sample.py` — headline "Monthly sales climbed steadily through the period and are on track to reach 17,056 next period—35% above the historical average." `forecast_meta = {date_col: month, value_col: actual_sales, picker_reason: non_null_count=24, value_spread=1100.00}`. `partial_narration_missing_forecast: false`. Tone clean (no σ/std-dev/variance/percentile in headline or body).
-- **Lockdown:** `backend/tests/test_track_a_phase3_prompt_fix.py` 9/9 PASS (6 test functions × parametrize fanout: 4 banned-jargon + 5 other = 9). v1 byte-identical guard 4/4. Combined narration + prompt-fix + v1 guard: **23/23 PASS**.
+- **Written:** 2026-06-04T05:37:00Z (Track A Phase 3 R3v3 plumbing fix — `forecast_meta_for_prompt` reorder + `[run_forecast] swallowed exception` logger.warning + `value_spread` uses minv/maxv not 6-sample preview + prompt requires ALL non-empty tabs + per-tab partial flags + anomaly call-site fix).
+- **Agent:** track-a-phase3-r3v3-plumbing-and-all-tabs.
+- **Mode:** Surgical fix. R3v2 plumbing missed three things: (1) `forecast_meta` was assigned inside `try/except` so a swallowed run_forecast exception dropped the autopicker decision before the prompt; (2) `value_spread=0.00` because the truncated 6-sample preview hid the real range; (3) anomaly call-site in synthesize_v2 used wrong kwargs → silent swallow → `whats_odd` never had block data. All fixed; prompt now requires tab-per-block.
+- **Combined memo:** `sprints/TRACK_A_PHASE3_R3V3_PLUMBING_AND_ALL_TABS.md`
+- **Live wire sample (Date + 3 numerics):** `/tmp/track_a_phase3_r3v2_live_sample.py` — headline "One month saw refunds spike to 17 times the typical level, while underlying sales climbed steadily toward a projected 36% gain over two years." All 3 tabs populated (`what_changed`, `whats_likely_next`, `whats_odd`). `forecast_meta = {date_col: month, value_col: actual_sales, picker_reason: non_null_count=24, value_spread=5240.00}` (was 0.00 in R3v2). `[autopick] selected (month, actual_sales) from sheet 'Monthly' (non_null_count=24, value_spread=5240.00)`.
+- **Lockdown:** `backend/tests/test_track_a_phase3_prompt_fix.py` 10 functions / 13 pytest cases PASS (≤10 R4 cap on test functions honoured). Combined with narration + v1 byte-identical + workbook-analyze: **58/58 PASS**.
+- **Track A Phase 3 stays 🟡** until tester re-runs J19 + J20.

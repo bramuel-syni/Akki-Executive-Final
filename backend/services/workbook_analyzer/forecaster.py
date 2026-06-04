@@ -189,13 +189,24 @@ def autopick_forecast_columns(
             continue
         for date_col in date_cols:
             for num_col in numeric_cols:
-                # Score: (non_null_count, variance) — descending sort.
-                # Variance proxied by sample value spread for now.
-                samples = [
-                    float(v) for v in (num_col.sample_values or [])
-                    if isinstance(v, (int, float))
-                ]
-                spread = (max(samples) - min(samples)) if len(samples) >= 2 else 0.0
+                # Score: (non_null_count, value_spread) — descending.
+                # Track A Phase 3 R3v3 (2026-06-04) — spread is now
+                # computed from the parser's pre-computed minv/maxv on
+                # the FULL column (not the truncated 6-sample preview).
+                # Sample-based spread silently collapsed to 0.00 when
+                # the first six previewed rows happened to look similar
+                # or carried non-numeric types that filter dropped —
+                # masking real-spread columns like monthly revenue.
+                if num_col.maxv is not None and num_col.minv is not None:
+                    spread = float(num_col.maxv) - float(num_col.minv)
+                else:
+                    # Fall back to sample-based spread for the (rare)
+                    # case the parser couldn't compute minv/maxv.
+                    samples = [
+                        float(v) for v in (num_col.sample_values or [])
+                        if isinstance(v, (int, float))
+                    ]
+                    spread = (max(samples) - min(samples)) if len(samples) >= 2 else 0.0
                 score = (num_col.non_null_count, spread)
                 if score > best_score:
                     best_score = score

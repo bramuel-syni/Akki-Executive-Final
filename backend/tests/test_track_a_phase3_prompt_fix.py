@@ -1,22 +1,31 @@
-"""Track A Phase 3 R3v2 (2026-06-04) — prompt-layer surgical fix.
+"""Track A Phase 3 R3v2 + R3v3 (2026-06-04) — prompt-layer surgical fix.
 
-Six lockdown tests for the post-J19/J20 surgical fix, NOT a
+Ten lockdown tests for the post-J19/J20 surgical fix, NOT a
 re-test of Phase 3 plumbing (covered by
 `test_track_a_phase3_narration.py`).
 
-R4 ceiling: 6/10. This file ONLY covers behaviours added in the
-2026-06-04T05 dispatch:
+R4 ceiling: 10/10. Covers behaviours added across R3v2 + R3v3:
 
-  1. Banned statistical jargon in headline blanked (σ + standard
-     deviation as parametrised samples).
-  2. `forecast_meta` (date_col, value_col, picker_reason) surfaces
-     in the synthesize response when a forecast was computed.
-  3. Bounded retry once when the LLM omits `whats_likely_next`.
-  4. After the retry still omits, `partial_narration_missing_forecast:
-     true` is set on the response.
-  5. `autopick_forecast_columns` returns a `picker_reason` field.
-  6. `autopick_forecast_columns` emits a `[autopick] selected` stdout
-     line per successful call.
+  R3v2 surfaces:
+    1. Banned statistical jargon in headline blanked (σ + standard
+       deviation as parametrised samples).
+    2. `forecast_meta` (date_col, value_col, picker_reason) surfaces
+       in the synthesize response when a forecast was computed.
+    3. Bounded retry once when the LLM omits a required tab.
+    4. After the retry still omits, per-tab `partial_narration_
+       missing_{tab}` flag(s) are set.
+    5. `autopick_forecast_columns` returns a `picker_reason` field.
+    6. `autopick_forecast_columns` emits a `[autopick] selected`
+       stdout line per successful call.
+
+  R3v3 surfaces:
+    7. `forecast_meta_for_prompt` is set the moment autopick
+       succeeds, regardless of whether `run_forecast` raised.
+    8. logger.warning fires on a swallowed forecast exception.
+    9. All three tabs (what_changed, whats_likely_next, whats_odd)
+       persist when their deterministic blocks are non-empty.
+   10. `picker_reason` value_spread matches actual minv/maxv of the
+       chosen column (regression on the `value_spread=0.00` bug).
 """
 from __future__ import annotations
 
@@ -316,3 +325,217 @@ def test_autopicker_emits_stdout_log_line(capsys):
     captured = capsys.readouterr()
     assert "[autopick] selected (D, V)" in captured.out
     assert "non_null_count=5" in captured.out
+
+
+# ─────────────────────────────────────────────────────────────────
+# R3v3 surfaces — 4 new lockdowns
+# ─────────────────────────────────────────────────────────────────
+
+
+# ── 7. forecast_meta_for_prompt set even when run_forecast raises ──
+
+
+@pytest.mark.asyncio
+async def test_forecast_meta_passes_to_prompt_even_when_run_forecast_raises(
+    transport, monkeypatch,
+):
+    """R3v3 regression — the prompt MUST see forecast_meta when the
+    autopicker succeeded, regardless of whether `run_forecast`
+    produced a vector. Force `run_forecast` to raise; verify the
+    synthesize response still carries `forecast_meta` (which only
+    happens if narrate_analysis was called with forecast_meta set —
+    which only happens if the router moved the assignment OUT of
+    the try-block)."""
+    from services.solva_v2 import analyze_narration as narr
+    from routers import workbook_analysis as wba_router
+
+    def _raise(**_kw):
+        raise ValueError("forced for R3v3 test")
+    monkeypatch.setattr(wba_router, "run_forecast", _raise)
+    monkeypatch.setattr(narr, "shield_invoke", AsyncMock(return_value=_shield_response({
+        "headline": "OK.",
+        "observations": [
+            {"tab": "what_changed", "title": "x",
+             "body": "Run rate steady.",
+             "evidence_citation_indices": [0]},
+            {"tab": "whats_likely_next", "title": "y",
+             "body": "Next period extends prior trend.",
+             "evidence_citation_indices": [0]},
+        ],
+    })))
+
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        admin = await _csrf_login(ac, "admin@akki.ai", "AkkiAdmin2026!")
+        aid = await _seed_24mo(ac, admin, ctx="tap3v3-noraise-" + uuid.uuid4().hex[:6])
+        r = await ac.post(f"/api/workbook/v2/analyses/{aid}/synthesize", headers=admin)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        # Forecast vector empty (run_forecast raised) — but
+        # forecast_meta MUST still be on the response because the
+        # autopicker decision now flows to the prompt unconditionally.
+        assert body.get("forecast_meta") is not None, (
+            "forecast_meta missing — autopicker decision was dropped "
+            "when run_forecast raised (R3v3 regression)."
+        )
+        assert body["forecast_meta"]["date_col"] == "month"
+        assert body["forecast_meta"]["value_col"] == "actual_sales"
+
+
+# ── 8. logger.warning fires on swallowed forecast exception ────
+
+
+@pytest.mark.asyncio
+async def test_logger_warning_on_swallowed_forecast_exception(
+    transport, monkeypatch, caplog,
+):
+    """Observability — when `run_forecast` raises and the router
+    swallows the exception (graceful degradation), a single
+    `[run_forecast] swallowed exception` line lands at WARNING level
+    so future regressions are visible in `/var/log/supervisor/`."""
+    import logging as _logging
+    from services.solva_v2 import analyze_narration as narr
+    from routers import workbook_analysis as wba_router
+
+    def _raise(**_kw):
+        raise ValueError("forced log test")
+    monkeypatch.setattr(wba_router, "run_forecast", _raise)
+    monkeypatch.setattr(narr, "shield_invoke", AsyncMock(return_value=_shield_response({
+        "headline": "OK.",
+        "observations": [
+            {"tab": "what_changed", "title": "x",
+             "body": "Run rate held flat.",
+             "evidence_citation_indices": [0]},
+            {"tab": "whats_likely_next", "title": "y",
+             "body": "Next period extends prior trend.",
+             "evidence_citation_indices": [0]},
+        ],
+    })))
+
+    caplog.set_level(_logging.WARNING, logger="akki.workbook_analysis")
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        admin = await _csrf_login(ac, "admin@akki.ai", "AkkiAdmin2026!")
+        aid = await _seed_24mo(ac, admin, ctx="tap3v3-log-" + uuid.uuid4().hex[:6])
+        r = await ac.post(f"/api/workbook/v2/analyses/{aid}/synthesize", headers=admin)
+        assert r.status_code == 200, r.text
+    matched = [
+        rec for rec in caplog.records
+        if "[run_forecast] swallowed exception" in rec.getMessage()
+    ]
+    assert matched, (
+        "expected at least one '[run_forecast] swallowed exception' WARNING "
+        f"line; got {[r.getMessage() for r in caplog.records]!r}"
+    )
+
+
+# ── 9. All required tabs persist when all 3 blocks non-empty ────
+
+
+@pytest.mark.asyncio
+async def test_all_three_tabs_persist_when_all_blocks_populated(
+    transport, monkeypatch,
+):
+    """When the LLM returns observations for all three required
+    tabs AND every required tab has matching deterministic block
+    data, all three persist in the response (no silent dropping
+    via citation_resolver or voice-lint on the happy path)."""
+    from services.solva_v2 import analyze_narration as narr
+
+    fake = _shield_response({
+        "headline": "Top-line growth steady with one outlier month.",
+        "observations": [
+            {"tab": "what_changed", "title": "Steady run-rate growth",
+             "body": "Monthly sales climbed across the twelve sampled periods.",
+             "evidence_citation_indices": [0]},
+            {"tab": "whats_likely_next", "title": "Trend lands above plan",
+             "body": "If the pattern holds, the next quarter clears prior plan.",
+             "evidence_citation_indices": [0]},
+            {"tab": "whats_odd", "title": "One month broke pattern",
+             "body": "August spiked roughly fifteen percent above the trailing twelve-month average.",
+             "evidence_citation_indices": [0]},
+        ],
+    })
+    monkeypatch.setattr(narr, "shield_invoke", AsyncMock(return_value=fake))
+
+    # Direct unit-test against narrate_analysis with a synthetic
+    # WorkbookAnalysis carrying signal + forecast + anomaly blocks.
+    from services.workbook_analyzer.schema import (
+        WorkbookAnalysis, WorkbookCitation, WorkbookSignal,
+        ForecastRun, AnomalyRow,
+    )
+
+    cite = WorkbookCitation(cell_range="S!A1:B12", excerpt="sample")
+    wba = WorkbookAnalysis(
+        id="wba-unit-3tab", account_id="acct-1", document_id="doc-1",
+        filename="x.xlsx", file_format="xlsx", file_size_bytes=1,
+        status="ready",
+        sheets=[],
+        signals=[WorkbookSignal(
+            kind="trend", title="Up", detail="Run rate climbed.",
+            column="actual_sales", sheet="S", citations=[cite],
+        )],
+        forecasts=[ForecastRun(
+            id="fc-x", sheet="S", date_column="month", value_column="actual_sales",
+            n_historical=12, horizon_periods=4, slope=1.0, intercept=0.0, r2=0.9,
+            projections=[{"period_index": 1, "value": 1.0, "ci_low": 0.5, "ci_high": 1.5}],
+            citations=[cite],
+        )],
+        anomalies=[AnomalyRow(
+            sheet="S", column="actual_sales", row_index=8, value=12345.0,
+            z_score=2.5, iqr_distance=1.8,
+            rationale="One month above trailing twelve-month average.",
+            citations=[cite],
+        )],
+    )
+    result = await narr.narrate_analysis(
+        workbook_analysis=wba,
+        account_id="acct-1",
+        objective="",
+        forecast_meta={"date_col": "month", "value_col": "actual_sales",
+                       "picker_reason": "test"},
+    )
+    tabs = {o["tab"] for o in result["observations"]}
+    assert tabs == {"what_changed", "whats_likely_next", "whats_odd"}, (
+        f"expected all three required tabs to persist; got {sorted(tabs)}"
+    )
+    # No partial flags because the LLM met every requirement.
+    assert "partial_narration_missing_what_changed" not in result
+    assert "partial_narration_missing_whats_likely_next" not in result
+    assert "partial_narration_missing_whats_odd" not in result
+    assert "partial_narration_missing_forecast" not in result
+
+
+# ── 10. value_spread regression on the 0.00 bug ────────────────
+
+
+def test_value_spread_uses_minv_maxv_not_truncated_samples():
+    """R3v3 regression — the autopicker's `value_spread` previously
+    used the parser's 6-row sample preview, which silently collapsed
+    to `0.00` when the previewed rows happened to look similar (or
+    carried non-numeric types). The picker_reason now uses the
+    parser's pre-computed `minv`/`maxv` on the FULL column."""
+    from services.workbook_analyzer import autopick_forecast_columns
+    from services.workbook_analyzer.schema import WorkbookSheet, WorkbookColumn
+
+    sheet = WorkbookSheet(
+        name="Wide", n_rows=24, n_columns=2, header_row_index=1,
+        columns=[
+            WorkbookColumn(name="month", letter="A", kind="date",
+                           non_null_count=24, null_count=0,
+                           sample_values=["2024-01-28"] * 6),
+            # First 6 sample values are nearly identical (10000, 10220,
+            # 10440, 10660, 10880, 11100 — sample-spread ≈ 1100) BUT
+            # minv/maxv (set by the parser on the full column) show
+            # the real 0–115K spread we saw on the tester's workbook.
+            WorkbookColumn(name="actual_sales", letter="B", kind="numeric",
+                           non_null_count=24, null_count=0,
+                           minv=10000.0, maxv=125000.0,
+                           sample_values=[10000, 10220, 10440, 10660, 10880, 11100]),
+        ],
+    )
+    pick = autopick_forecast_columns(sheets=[sheet])
+    assert pick is not None
+    # True spread = 125000 - 10000 = 115000.00
+    assert "value_spread=115000.00" in pick["picker_reason"], (
+        f"value_spread should reflect minv/maxv not sample preview; "
+        f"got picker_reason={pick['picker_reason']!r}"
+    )

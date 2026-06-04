@@ -25,6 +25,7 @@ Storage:
 from __future__ import annotations
 
 import base64
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -71,6 +72,7 @@ from services.analysis_lifecycle import (
 
 
 router = APIRouter(prefix="/api/workbook", tags=["workbook-analyze"])
+logger = logging.getLogger("akki.workbook_analysis")
 
 
 # Track A Phase 1 (2026-06-03) — file-size cap raised from 25MB →
@@ -804,9 +806,27 @@ async def synthesize_v2_endpoint(
     wba.signals = all_signals
 
     # Forecast — Bug #30 autopicker.
+    #
+    # Track A Phase 3 R3v3 (2026-06-04) — `forecast_meta_for_prompt`
+    # is now assigned the moment the autopicker succeeds, BEFORE
+    # `run_forecast` is called. Previously the assignment was inside
+    # the `try`, so a swallowed ValueError from `run_forecast` (e.g.
+    # the date column failed `_to_ordinal` on every row → < 3 pairs)
+    # dropped the autopicker's decision before the prompt was built.
+    # The prompt then had no way to require `whats_likely_next`.
     pick = autopick_forecast_columns(sheets=sheets)
     forecast_meta_for_prompt: Optional[Dict[str, Any]] = None
     if pick is not None:
+        # Surface the autopicker choice for the prompt regardless of
+        # whether `run_forecast` produces a deterministic vector. The
+        # prompt scaffolding can require `whats_likely_next` based on
+        # "we attempted a forecast on (date_col, value_col)" even when
+        # the deterministic engine returned no projections.
+        forecast_meta_for_prompt = {
+            "date_col":      pick["date_column"],
+            "value_col":     pick["value_column"],
+            "picker_reason": pick.get("picker_reason", ""),
+        }
         sheet_obj = next((s for s in sheets if s.name == pick["sheet"]), None)
         if sheet_obj:
             sheet_matrix = matrices.get(pick["sheet"]) or []
@@ -829,30 +849,48 @@ async def synthesize_v2_endpoint(
                 )
                 resolver.resolve_many(fc.citations)
                 wba.forecasts.append(fc)
-                # Track A Phase 3 R3v2 — surface autopicker meta so
-                # the prompt can REQUIRE a `whats_likely_next` obs.
-                forecast_meta_for_prompt = {
-                    "date_col": pick["date_column"],
-                    "value_col": pick["value_column"],
-                    "picker_reason": pick.get("picker_reason", ""),
-                }
-            except (ValueError, CitationUnverifiable):
-                pass
+            except (ValueError, CitationUnverifiable) as exc:
+                # Observability — preserve graceful-degradation
+                # behaviour but make the swallowed exception visible
+                # in the supervisor backend log (was silent in R3v2,
+                # masked the date-ordinal classifier bug for J19).
+                logger.warning(
+                    "[run_forecast] swallowed exception on (%s, %s): %s",
+                    pick["date_column"], pick["value_column"], exc,
+                )
 
     # Anomalies — top-6 per numeric column on the first sheet.
+    #
+    # Track A Phase 3 R3v3 (2026-06-04) — call-site fix. The prior
+    # invocation passed `sheet=<WorkbookSheet>, column=<col>` (object
+    # types) whereas `detect_anomalies` expects `sheet: str,
+    # column_name: str, column_letter: str, header_row_index: int,
+    # col_index_zero: int`. Every call raised TypeError and got
+    # swallowed by the broad `except Exception`, so `wba.anomalies`
+    # was always empty and `whats_odd` never had block data. No
+    # engine schema change — purely call-site.
     if sheets:
         first_sheet = sheets[0]
         first_matrix = matrices.get(first_sheet.name) or []
-        for col in first_sheet.columns:
+        for col_idx, col in enumerate(first_sheet.columns):
             if col.kind != "numeric":
                 continue
             try:
                 anoms = detect_anomalies(
-                    sheet=first_sheet, column=col,
+                    sheet=first_sheet.name,
+                    column_name=col.name,
+                    column_letter=col.letter,
                     sheet_matrix=first_matrix,
-                    z_threshold=3.0, iqr_multiplier=1.5,
+                    header_row_index=first_sheet.header_row_index,
+                    col_index_zero=col_idx,
+                    z_threshold=3.0,
+                    iqr_multiplier=1.5,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[detect_anomalies] swallowed exception on column %s: %s",
+                    col.name, exc,
+                )
                 anoms = []
             for a in anoms[:6]:
                 try:
