@@ -97,6 +97,23 @@ def sanitize_doc(d: Dict[str, Any]) -> Dict[str, Any]:
         # NOT churn on unrelated edits (title/category/audience).
         "notes":              d.get("notes"),
         "notes_updated_at":   d.get("notes_updated_at"),
+        # Track A Phase 5 iter-2 (2026-06-04) — fig-53 row 2 additive
+        # fields. The universal documents listing surface
+        # (pages/WorkStudio.jsx:DocumentRow) reads these directly off
+        # the sanitised row. Compile/Enhance/Brief outputs write all
+        # four via _create_continue_chat in
+        # routers/work_studio_export.py; user-uploaded documents emit
+        # them as None and the FE row 2 silently skips.
+        "akki_generated":     d.get("akki_generated", False),
+        "source_count":       d.get("source_count"),
+        "contributor_count":  d.get("contributor_count"),
+        "confidence_pct":     d.get("confidence_pct"),
+        # Track A Phase 5 iter-2 — the drawer auto-open after compile
+        # needs to find the source export id for the Review surface.
+        # We mirror it on the documents row at insert time
+        # (work_studio_export.py _create_continue_chat); the FE drawer
+        # opens the surface backed by this id if present.
+        "work_studio_export_id": d.get("work_studio_export_id"),
     }
 
 

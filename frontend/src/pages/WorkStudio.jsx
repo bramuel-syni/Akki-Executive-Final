@@ -324,6 +324,20 @@ function DocumentRow({ row, onOpen }) {
       });
     } catch (_e) { /* keep fallback */ }
   }
+  // Track A Phase 5 iter-2 (2026-06-04, fig-53 row 2) — additive
+  // fields surfaced on every documents-row insert path (existing
+  // upload + _create_continue_chat for compile/enhance/brief).
+  const sourceCount   = typeof row.source_count === "number" ? row.source_count : null;
+  const contribCount  = typeof row.contributor_count === "number" ? row.contributor_count : null;
+  const akkiGenerated = row.akki_generated === true;
+  const confPct       = typeof row.confidence_pct === "number" ? row.confidence_pct : null;
+  // QA-doc 75/50 thresholds (mirrors services.work_studio_overlay.rag_band).
+  let confClass = "";
+  if (confPct !== null) {
+    if (confPct >= 75)      confClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
+    else if (confPct >= 50) confClass = "bg-amber-50 text-amber-700 border-amber-200";
+    else                    confClass = "bg-red-50 text-red-700 border-red-200";
+  }
   return (
     <button
       type="button"
@@ -332,6 +346,7 @@ function DocumentRow({ row, onOpen }) {
       data-testid="work-studio-document-row"
       data-origin={origin || "unknown"}
       data-category={category || "uncategorized"}
+      data-akki-generated={akkiGenerated}
     >
       <Files className="w-4 h-4 text-[var(--ink)] shrink-0 mt-1 sm:mt-0" strokeWidth={1.7} />
       <div className="min-w-0 flex-1">
@@ -346,13 +361,6 @@ function DocumentRow({ row, onOpen }) {
           >
             {displayOrigin(origin)}
           </span>
-          {/* Category badge — reinforces orthogonality model.
-              Drafts+Briefs merge (2026-02 fork-resume) — chip now uses
-              brand-purple ned-purple/N (Tailwind-config short name so
-              opacity composites correctly, see Wave 4.2.followup.2)
-              and the shorter singular label form (DRAFT / BRIEF / etc).
-              On the merged tab this is the per-tile DRAFT vs BRIEF
-              discriminator the user requested. */}
           {category && (
             <span
               className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider bg-ned-purple/10 text-ned-purple border border-ned-purple/20"
@@ -370,6 +378,52 @@ function DocumentRow({ row, onOpen }) {
             {modifiedLabel}
           </span>
         </div>
+        {/* Track A Phase 5 iter-2 (2026-06-04, fig-53 row 2) —
+            sources count · contributors count · Akki Generated badge
+            · confidence chip. Renders only when ANY of the four are
+            present; legacy rows pre-Phase 5 silently skip the line. */}
+        {(sourceCount !== null || contribCount !== null || akkiGenerated || confPct !== null) && (
+          <div
+            className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[10.5px] text-[var(--muted)] font-mono uppercase tracking-[0.08em]"
+            data-testid="work-studio-document-row-meta-row2"
+          >
+            {sourceCount !== null && (
+              <span data-testid="work-studio-document-row-sources">
+                {sourceCount} source{sourceCount === 1 ? "" : "s"}
+              </span>
+            )}
+            {contribCount !== null && (
+              <>
+                {sourceCount !== null && <span>·</span>}
+                <span data-testid="work-studio-document-row-contribs">
+                  {contribCount} contributor{contribCount === 1 ? "" : "s"}
+                </span>
+              </>
+            )}
+            {akkiGenerated && (
+              <>
+                {(sourceCount !== null || contribCount !== null) && <span>·</span>}
+                <span
+                  className="inline-flex items-center rounded-sm bg-ned-purple/10 text-ned-purple px-1 py-0.5 text-[9.5px] not-italic"
+                  data-testid="work-studio-document-row-akki-generated"
+                >
+                  Akki Generated
+                </span>
+              </>
+            )}
+            {confPct !== null && (
+              <>
+                <span>·</span>
+                <span
+                  className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[9.5px] font-medium not-italic ${confClass}`}
+                  data-testid="work-studio-document-row-confidence"
+                >
+                  Confidence {confPct}%
+                </span>
+              </>
+            )}
+          </div>
+        )}
       </div>
       <ArrowRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
     </button>
@@ -743,11 +797,23 @@ export default function WorkStudio() {
       setDraftingDrawerKind(k);
       setDraftingDrawerOpen(true);
     };
+    // Track A Phase 5 iter-2 (2026-06-04) — drafting drawer's
+    // [Enhance] CTA dispatches this event so we route through the
+    // existing EnhanceModal (multipart `/work-studio/enhance/{kind}`)
+    // instead of inventing a new alias endpoint.
+    const onOpenEnhance = (e) => {
+      const k = e?.detail?.kind || "report";
+      setEnhanceKind(k);
+      setEnhanceMode("default");
+      setEnhanceOpen(true);
+    };
     window.addEventListener("akki:work-studio-compile-started", onCompileStart);
     window.addEventListener("akki:open-drafting-drawer", onOpenDrafting);
+    window.addEventListener("akki:open-enhance-modal", onOpenEnhance);
     return () => {
       window.removeEventListener("akki:work-studio-compile-started", onCompileStart);
       window.removeEventListener("akki:open-drafting-drawer", onOpenDrafting);
+      window.removeEventListener("akki:open-enhance-modal", onOpenEnhance);
     };
   }, []);
   const [railRefreshKey, setRailRefreshKey] = useState(0);
@@ -1253,17 +1319,33 @@ export default function WorkStudio() {
           contextId={cid}
           exportId={checklistExportId}
           steps={checklistSteps}
-          onComplete={(exportId) => {
+          onComplete={(completedExportId, continueDocId) => {
             setChecklistOpen(false);
             setChecklistExportId(null);
             fetchAggregates();
             if (typeof window !== "undefined") {
               window.dispatchEvent(new Event("akki:document-card-pulse"));
             }
-            // Auto-open the new card in the universal drawer.
-            const sp = new URLSearchParams(searchParams);
-            sp.set("doc_id", exportId);
-            setSearchParams(sp, { replace: false });
+            // Track A Phase 5 iter-2 (2026-06-04, Failure 2 root-cause):
+            // iter-1 routed the auto-open through `?doc_id=` with the
+            // work_studio_exports id, but the canonical DocumentDrawer
+            // expects a `documents` collection id. The 404 was silent
+            // because the drawer never opened. _run_export already
+            // mints a sibling `documents` row via _create_continue_chat;
+            // its id is returned as `continue_doc_id` on the polling
+            // endpoint. We route the auto-open through the canonical
+            // `?doc_id=` URL contract using THAT id, which keeps the
+            // same surface every card click uses. Fallback to the
+            // legacy DocumentOverlay path when the sibling row is
+            // missing (e.g. older runs before iter-2).
+            if (continueDocId) {
+              const sp = new URLSearchParams(searchParams);
+              sp.set("doc_id", continueDocId);
+              setSearchParams(sp, { replace: false });
+            } else {
+              setOverlayAid(completedExportId);
+              setOverlayOpen(true);
+            }
           }}
           onError={(msg) => {
             setChecklistOpen(false);

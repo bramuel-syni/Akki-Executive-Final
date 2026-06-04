@@ -97,8 +97,17 @@ def validate_content(content: Dict[str, Any], kind: str) -> Dict[str, Any]:
     Citation enforcement is the key invariant: every `cites` index must
     point to an entry in the `citations` manifest. We DO NOT silently
     drop bad indices — bad indices indicate the LLM fabricated a source.
+
+    Track A Phase 5 iter-2 (2026-06-04) — `kind="minutes"` accepted as
+    a report-shape variant. Minutes content uses the same `title /
+    executive_summary / sections[] / citations[]` envelope as a report;
+    the renderer at routers/work_studio_export.py:749 routes minutes
+    through `render_report_docx` for the same reason. Adding minutes
+    here unblocks the Compile Minutes pipeline (fig 60 spec) without
+    introducing a new template file. Other kinds (e.g. minutes-PPTX)
+    remain unsupported as the user has not requested them.
     """
-    if kind not in ("brief", "deck", "report"):
+    if kind not in ("brief", "deck", "report", "minutes"):
         raise ContentValidationError(f"Unknown kind: {kind}")
 
     title = (content.get("title") or "").strip()

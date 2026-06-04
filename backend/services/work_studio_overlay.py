@@ -300,17 +300,39 @@ def overlay_payload(row: Dict[str, Any]) -> Dict[str, Any]:
         "context_id": row["context_id"],
         "title": title,
         "kind": row.get("kind"),
+        # Track A Phase 5 iter-2 (2026-06-04) — the FE card consumer
+        # reads `item.export_kind`; the canonical column on
+        # work_studio_exports is `kind`. Mirror it as `export_kind`
+        # so the listing payload carries both names consistently.
+        "export_kind": row.get("kind"),
         "lifecycle_state": row.get("lifecycle_state") or "committed",
         "legacy": bool(row.get("legacy", True)),
         "structured_content": row.get("structured_content"),
         "source_document_ids": row.get("source_document_ids") or [],
         "intelligence_report": row.get("intelligence_report"),
         "owner_account_id": row.get("account_id"),
+        # Track A Phase 5 iter-2 (2026-06-04) — surface the additive
+        # fig-53 row-2 fields. Iter-1 wrote them on insert but the
+        # overlay_payload projection was an allow-list that dropped
+        # them; tester confirmed all four returned None on the live
+        # listing endpoint. See /tmp/phase5_iter2_listing_repro.py
+        # for the pre-fix reproducer.
+        "source_count":      row.get("source_count"),
+        "contributor_count": row.get("contributor_count"),
+        "akki_generated":    row.get("akki_generated", False),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
         "completed_at": row.get("completed_at"),
         "file_name": row.get("file_name"),
         "output_format": row.get("output_format"),
+        # Track A Phase 5 iter-2 — `status` is what the polling
+        # LoadingChecklistModal reads; pre-iter-2 the listing didn't
+        # surface it, so the polling fell back to `(undefined →
+        # treat-as-running)` and never observed the running→complete
+        # transition. This is a partial root-cause of Failure 2
+        # (lifecycle terminus): even when the row flipped to
+        # complete on the DB, the FE never saw it.
+        "status": row.get("status"),
     }
 
 

@@ -15,6 +15,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import AnalyzeDrawer from "@/components/analyze/AnalyzeDrawer";
 import { Loader2, Plus, UploadCloud } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 function fmtRel(iso) {
   if (!iso) return "—";
@@ -31,6 +32,19 @@ export default function AnalyzeJournal() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const aid = params.get("aid");
+  // BUG-ANL-001 (2026-06-04, user pick = option a) — route guard.
+  // The Analyze Journal page silently rendered when no context_id
+  // was available; the user could see the upload form but the
+  // POST /workbook/upload-multi would 400 with `context_id_required`.
+  // We now redirect on mount if no context is selected: to the
+  // user's default context if known, or to /app/home with an
+  // informational toast if not.
+  const auth = useAuth();
+  const activeContextId = auth?.activeContextId || null;
+  const defaultContextId = auth?.account?.default_context_id || null;
+  const authReady = auth?.account !== undefined;  // AuthContext sets account after /auth/me lands
+  const urlCtx = params.get("context_id") || null;
+  const effectiveContextId = urlCtx || activeContextId || defaultContextId || null;
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +66,29 @@ export default function AnalyzeJournal() {
 
   useEffect(() => { load(); }, [load]);
 
+  // BUG-ANL-001 — mount-time route guard.
+  // Runs once the AuthContext is hydrated. If we have a default
+  // context but the URL is missing context_id, we backfill the URL
+  // via setParams(replace=true) so future calls (upload, etc.)
+  // can read it off the query string. If there's no default
+  // context, we bounce to /app/home with a polite picker prompt.
+  // The original `context_id_required` toast from any background
+  // call is suppressed by the redirect happening BEFORE the user
+  // can trigger an upload.
+  useEffect(() => {
+    if (!authReady) return;
+    if (urlCtx) return;            // URL already carries it — nothing to do
+    if (defaultContextId || activeContextId) {
+      const next = new URLSearchParams(params);
+      next.set("context_id", defaultContextId || activeContextId);
+      setParams(next, { replace: true });
+      return;
+    }
+    // No context anywhere — bounce to /app/home with a picker prompt.
+    toast.info("Pick a context to view your Analyze Journal.");
+    navigate("/app/home", { replace: true });
+  }, [authReady, urlCtx, defaultContextId, activeContextId, params, setParams, navigate]);
+
   // Re-load whenever the drawer closes so the listing reflects new
   // notes / objective edits.
   useEffect(() => {
@@ -72,11 +109,24 @@ export default function AnalyzeJournal() {
 
   const onCreate = async (filesList) => {
     if (!filesList || filesList.length === 0) return;
+    if (!effectiveContextId) {
+      // The mount guard should have redirected before this point;
+      // belt-and-braces in case the user navigates to the page
+      // and clicks Upload before the guard's useEffect runs.
+      toast.info("Pick a context first to upload an analysis.");
+      navigate("/app/home", { replace: true });
+      return;
+    }
     setCreating(true);
     try {
       const fd = new FormData();
       for (const f of filesList) fd.append("files", f);
       if (objective.trim()) fd.append("objective", objective.trim());
+      // BUG-ANL-001 — thread context_id into the FormData so the
+      // backend at /workbook/upload-multi:660-665 doesn't fall back
+      // to `active_context_id` (which may also be empty on a fresh
+      // session). Explicit > implicit.
+      fd.append("context_id", effectiveContextId);
       const { data } = await api.post("/workbook/upload-multi", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });

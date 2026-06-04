@@ -104,9 +104,17 @@ export default function LoadingChecklistModal({
           settledRef.current = true;
           // Jump to last step immediately on completion.
           setStepIndex(steps.length - 1);
+          // Track A Phase 5 iter-2 (2026-06-04) — pass BOTH the
+          // export_id AND the continue_doc_id back to the parent.
+          // The export_id opens the DocumentOverlay (legacy work-
+          // studio surface); the continue_doc_id opens the canonical
+          // universal DocumentDrawer (the ?doc_id= URL surface used
+          // by every other category). Iter-1 only passed exportId,
+          // which 404'd against the documents-collection lookup.
+          const continueDocId = r.data?.continue_doc_id || null;
           // Brief beat to let the checklist render the final ✓.
           setTimeout(() => {
-            if (!cancelled) onComplete && onComplete(exportId);
+            if (!cancelled) onComplete && onComplete(exportId, continueDocId);
           }, 400);
         } else if (s === "failed" && !settledRef.current) {
           settledRef.current = true;

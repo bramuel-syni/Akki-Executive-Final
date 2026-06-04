@@ -34,7 +34,7 @@ Verbatim, dated:
 
 **Reconciliation note (2026-06-03):** The previous Section 3 was a prior agent's 8-cluster aggregation. This section is rebuilt verbatim against the three QA docs the user uploaded (`Onboarding Journey QA`, `Task Manager QA`, `Google Login + Doc Reader + Calendar + Open Questions QA`, all dated 2nd June 2026). The audit memo at `sprints/MASTER_STATE_RECONCILIATION_2026-06-03.md` documents the divergences uncovered.
 
-**Total items across 3 QA docs: 37. ✅ 31 · 🟡 0 · ❌ 4 · 🚧 2 · ❔ 0.** (Plus Bug #30 ✅, plus Track A Phase 4 ✅ 2026-06-04.)
+**Total items across 3 QA docs: 37. ✅ 31 · 🟡 0 · ❌ 4 · 🚧 2 · ❔ 0.** (Plus Bug #30 ✅, plus Track A Phase 4 ✅ 2026-06-04, plus Track A Phase 5 ✅ 2026-06-04, plus 1 new bug `BUG-ANL-001` ✅ 2026-06-04 logged & fixed in Section 5b.)
 
 Status legend:
 - ✅ SHIPPED — code change verified; tester journey-completion passed
@@ -216,6 +216,65 @@ Status legend:
   • `analyses.notes` + `analyses.notes_updated_at` top-level BC mirrors — duplicate `analyses.notes_history[-1]` content. Removal: Phase 5 after FE migrates to `notes_history[-1]`.
   Both deprecation flags carry forward into Phase 5's Pre-Read — DO NOT remove until the FE consumer is verified migrated (single grep target on `AnalyzeDrawer.jsx`).
 
+- Phase 5 (Work Studio Document Lifecycle Restoration): W1 copy + W2 Compile + W3 Enhance + W4 Brief save + W5 Draft + W6 Report/Deck blank + card fig-53 + Loading Checklist modal + Document Review drawer re-skin + Drafting Drawer + schema additive fields → ✅ SHIPPED 2026-06-04 (iter-1 11-item ship + iter-2 4-failure corrective). **69/69 lockdown PASS** across Phase 5 (14) + Phase 4 (21) + Phase 3 (25) + v1 byte-identical guard (2) + engagement revival (7). Live LLM compile evidence on report+docx + minutes+docx + 3 historical enhance/minutes completions in DB.
+
+  **Iter-1 ship — 11 scope deliverables (single coherent dispatch with 5 user-approved tightenings):**
+  • W1 — `pages/WorkStudio.jsx:1085` empty-state copy "below" → "above". Grep `actions below` = 0 hits.
+  • W2 — `/work-studio/compilations/{id}/start` endpoint (idempotent per Tightening 3); LoadingChecklistModal + auto-open chain.
+  • W3 — CSRF token threaded into `hooks/useStreamingProgress.js` for `/stream` endpoints (real failure cause; Pre-Read hypothesis was wrong — revised on curl evidence at `/tmp/phase5_w3_repro_v2.py`).
+  • W4 — ExportModal success modal carries "Saved to Drafts & Briefs" breadcrumb + `akki:open-document-overlay` event + cards-section pulse.
+  • W5 — `/contexts/{cid}/documents/manual-create` NEW endpoint (was 405); `DraftingDrawer.jsx` new component (273 LOC) with tiptap autosave + stable `draft_session_id` (Tightening 5).
+  • W6 — `CreateArtefactModal` blank branch dispatches `akki:open-drafting-drawer`.
+  • Card spec fig-53 — additive fields `source_count`, `contributor_count`, `akki_generated` on `work_studio_exports` inserts (4 call sites).
+  • Loading Checklist modal — NEW component (207 LOC), step-by-step progression with HOLD on "Finalising…" (Tightening 2).
+  • Drawer re-skin — `data-phase6="true"` on Edit toggle + Inline-edit mode indicator + Revise-with-AI button (line 435 / 767 / 817); PDF hides Revise-with-AI via JSX conditional.
+  • Drafting Drawer — see W5.
+  • Schema additive fields — on `work_studio_exports` collection; no migration; RAG threshold flipped 80→75 across 3 files.
+
+  **Iter-2 corrective dispatch (2026-06-04 19:35Z) — 4/4 root-cause fixes shipped:**
+  • **Fix A (Listing endpoint stripped additive fields)** — `services/work_studio_overlay.py:259-300` projection allow-list extended with `source_count`, `contributor_count`, `akki_generated`, `confidence_pct`, `export_kind`, `status`. Iter-1 wrote the fields on insert but the projection dropped them; tester confirmed all four returned None on the live listing. Verified via `/tmp/phase5_iter2_listing_repro.py`.
+  • **Fix B (Lifecycle terminus 4-hop break at TWO hops)** — Hop 3: `_create_continue_chat` at `routers/work_studio_export.py:967-1015` now writes `category` (via new `_KIND_TO_CATEGORY` mapping mirroring FE KIND_TABS) + Phase-5 fields onto the **sibling `documents` collection row**; iter-1's misread that the universal listing reads from `work_studio_exports` was wrong — it reads from `documents`, which needed the same additive fields mirrored. Hop 4: `LoadingChecklistModal.onComplete` now threads `continue_doc_id`; auto-open routes through the canonical `?doc_id=continueDocId` URL contract (the DocumentDrawer expects a documents-collection id, not a work_studio_exports id — iter-1's 404'd silently). `pages/WorkStudio.jsx:DocumentRow` extended with fig-53 row 2 (sources · contributors · Akki Generated · confidence chip).
+  • **Fix C (Minutes DOCX renderer gap)** — new product gap surfaced during iter-2: `kind=minutes format=docx` had no renderer ("No renderer for kind=minutes" rejection at `routers/work_studio_export.py:764`). Fix: `services/work_studio_export.py:111` accepts `kind="minutes"` in `validate_content` (treated as report-shape); `routers/work_studio_export.py:740-758` branches `kind in ("report", "minutes")` for both DOCX + PDF dispatch, reusing `_ex.render_report_docx/pdf`. Zero new templates. Live compile: `status=complete`, `sha256=7d889166be2cf3eef9...e5c36237aa`.
+  • **Fix D (W3 endpoint alignment — structural verification, no code drift)** — iter-1 Pre-Read's prose mentioned the invented path `/work-studio/documents/{aid}/enhance` but the shipped code never called it. EnhanceModal already targeted the canonical `/work-studio/enhance/{kind}/stream`. Iter-2 added `akki:open-enhance-modal` event handler at `pages/WorkStudio.jsx:715-730` so the DraftingDrawer's Enhance CTA routes through the same modal — avoiding the temptation of inventing an alias endpoint. Grep confirms zero call sites of the invented path.
+
+  **VERBATIM LIVE COMPILE TRACE (4-hop evidence from `/tmp/phase5_iter2_e2e_verify.py`, 2026-06-04 19:35Z):**
+  ```
+  ══ Compile report/docx ══
+    HOP 1 PASS  export_id=384115b1-6f40-4d…
+    HOP 2 PASS  status=complete  wall_s=124  continue_doc_id=66104789-…
+    HOP 3 PASS  doc in /documents?category=report  category=report
+    HOP 4 PASS  source_count=0, contributor_count=1, akki_generated=True
+
+  ══ Compile minutes/docx ══
+    HOP 1 PASS  export_id=d30caff8-2985-496a-9b2b-9bbd8d6a6335
+    HOP 2 PASS  status=complete  sha256=7d889166be2cf3eef9...e5c36237aa
+    HOP 3 PASS  doc_id=8db7d08e-…  category=minutes
+    HOP 4 PASS  akki_generated=True, source_count=0, contributor_count=1
+
+  ══ Enhance minutes (W3) ══
+    3 historical completions in db.work_studio_exports for
+    {source:enhance, kind:minutes, account:admin@akki.ai}
+    — all status=complete with sha256 populated.
+  ```
+
+  **Phase 6 deferred items (verified reachable as `data-phase6="true"` stubs in source):**
+  1. **Inline rich-text edit for DOCX** — `components/work_studio/overlay/DocumentOverlay.jsx:435` Edit toggle disabled with `data-phase6="true"` + tooltip "Inline edit ships in Phase 6".
+  2. **Inline slide edit for PPTX** — same toggle covers PPTX (Phase 6 split decision deferred); editor is locked to `editable: false` at `DocumentOverlay.jsx:680`.
+  3. **Revise-with-AI panel with diff view** — `components/work_studio/overlay/DocumentOverlay.jsx:817` button disabled with `data-phase6="true"` + tooltip "Revise with AI ships in Phase 6"; **HIDDEN entirely for PDF** via `{doc.output_format !== "pdf" && (...)}` JSX conditional.
+
+  **What I almost shipped silently (lessons captured in the sprint memo for the next agent):**
+  1. **Listing projection allow-list invisible to allow-list testers** — `overlay_payload()` stripped the additive fields the pytest layer never read end-to-end. Future Pre-Reads MUST grep both insert sites AND projection allow-lists.
+  2. **Pre-Read invented an endpoint path that didn't exist in `/openapi.json`** — Pre-Read self-grep MUST cross-check endpoint names against the OpenAPI inventory, not just internal consistency. The "self-consistency check" in iter-1 was too narrow.
+  3. **4-hop terminus break needed an explicit hop-by-hop trace** — "pytest passes therefore wiring works" is the same fallacy that bit Phase 4 iter-1. Future "lifecycle" claims need a curl that walks every hop.
+  4. **Minutes-DOCX renderer gap surfaced only by attempting the full journey** — the renderer dispatch is its own contract. Future "ship a new kind" Pre-Reads MUST trace through validator + prompt + dispatch.
+
+  **No `shield_invoke` signature change.** **No new env vars / migrations / Track B retouch / new UI component libraries.** All 8 backend + 8 FE touched files ruff/ESLint clean.
+
+  **Iteration budget**: 2/3 used. Iter-3 reserved for unforeseen architectural surprises only.
+
+  Memos: `sprints/TRACK_A_PHASE_5_WORK_STUDIO_LIFECYCLE.md`.
+
+
 ### Track B — QA cleanup
 - Phase B1 (small mechanical onboarding + signin): **O4** ✅ + **O6** ✅ + **G1** ✅ (Fig 20 — `/sign-in` → `/signin` × 4 buttons) + **G2 Fig 22 modal** ✅ (SessionTimeoutGuard handler gated on `account`); **O7** ✅ Fig 7. Phase status: ✅ SHIPPED — tester PASS Journeys 4-v2, 6, 7, 8, 9 (5/5 incl. regression), 2026-06-04. Memos: `sprints/TRACK_B_PHASE1_FIG7_V2_ROOT_CAUSE_FIX.md`, `sprints/TRACK_B_PHASE1B_O4_O6_FIG20_FIG22.md`.
 - Phase B2 (Task Manager lifecycle): TM1 (filter badges) + TM2 (Commission button + full Closure flow) + TM5 (View more → follow-up emails page) → ✅ SHIPPED — tester PASS Journeys 14-17 (8/8 incl. cross-tenant), 2026-06-04. Commission/Close endpoints (idempotent, audit-logged); filter-tab live count badges via `/api/tasks/counts`; FollowUpDraftsCard "View more" → `/app/cycle/drafts`. Memo: `sprints/TRACK_A_PHASE2_AND_TRACK_B_PHASE2_combined.md`.
@@ -233,39 +292,51 @@ Status legend:
 - Prod env: `POSTMARK_WEBHOOK_SECRET` decision — keep env var OR request follow-up to remove boot-guard at `server.py:573`
 - Optional prod cleanup: `python3 /app/backend/migrations/cleanup_postmark_fixtures.py`
 
+### Section 5b — New open bugs (logged, NOT auto-fixed)
+
+- **BUG-ANL-001 — Analyze Journal route fires `context_id_required` toast on direct `/app/analyze` load** → ✅ COMPLETE 2026-06-04T20:05:00Z (user picked option (a) — route guard).
+  - Screenshot: https://customer-assets.emergentagent.com/job_feature-docs/artifacts/mc4gtnev_Screenshot_20260604_222916_Chrome.jpg
+  - Root cause: `AnalyzeJournal.jsx` mount-time fetches + the multipart upload POST both assumed `context_id` was present in URL or on the account row's `active_context_id`. When neither was set, the upload 400'd with `context_id_required` (`backend/routers/workbook_analysis.py:660-665`) and the user saw the toast.
+  - Fix landed at `frontend/src/pages/AnalyzeJournal.jsx` (+35 / -6 LOC):
+    - Mount-time `useEffect` reads `activeContextId` and `account.default_context_id` from `useAuth()`. If URL is missing `?context_id=`, the URL is backfilled via `setParams({...}, { replace: true })`; if no context anywhere, redirect to `/app/home` with `toast.info("Pick a context to view your Analyze Journal.")`.
+    - `onCreate` upload handler now threads `effectiveContextId` into the multipart `FormData` defensively (explicit > implicit).
+  - Verified via live-preview screenshot: Case 1 (no `context_id`) → URL backfilled to `?context_id=aff5e102-04b8-4948-9f6b-27c9eca1f0d7`, NO toast. Case 2 (valid `context_id`) → listing renders cleanly with upload form + 8+ history rows.
+  - Coverage sweep: 8 sibling routes audited (`Events.jsx`, `Questions.jsx`, `TaskManager.jsx`, `InboundQueue.jsx`, `WorkStudio.jsx`, `CompanyHome.jsx`, `Learn.jsx`, `TenantSettings.jsx`) — all already handle missing-context safely (mostly via `if (!cid) return` early-exits OR `WorkspaceEntryGate`). NO sibling bugs of the same pattern.
+  - Memo: `sprints/BUG_ANL_001_ANALYZE_ROUTE_GUARD.md`.
+
 ---
 
 ## Section 6 — Active Phase
 
-**None active.** Track A Phase 5 ✅ COMPLETE 2026-06-04 (Work Studio Document Lifecycle Restoration — 11 scope items, 5 tightenings, 14 + 1 lockdown tests landed). All 11 shipped phases verified (Track A Phase 1+2+3+4+5, Track B B1 incl. B1b + B2 + B3 + B4 + B5). The full 3-doc QA backlog is closed except for the 2 USER-BLOCKED items. Paused pending user pick of next phase.
+**None active.** Track A Phase 5 ✅ COMPLETE 2026-06-04 (iter-1 11-item ship + iter-2 4-failure corrective: listing projection / lifecycle terminus 4-hop / minutes-DOCX renderer / W3 endpoint alignment). All 11 shipped phases verified (Track A Phase 1+2+3+4+5, Track B B1 incl. B1b + B2 + B3 + B4 + B5). Paused pending user pick of next phase.
 
 ---
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T13:35:00Z (Track A Phase 5 closure — Work Studio document lifecycle restored in a single coherent dispatch; 14/14 default lockdowns + 55/55 Phase 3+4 regression = 69/69 PASS; live-preview FE smoke confirmed zero webpack errors; raw-curl evidence on W3 captured at /tmp/phase5_w3_repro_v2.py).
-- **Agent:** track-a-phase-5-closure.
-- **Mode:** Code + memo + state. 11 scope items shipped via 6 backend file changes (1 new endpoint per W2/W5/save-draft + delete + additive fields + RAG flip + inline=true) and 8 frontend file changes (2 new components — LoadingChecklistModal + DraftingDrawer — and 6 surgical edits to existing files). All 5 user-approved tightenings honoured with file:line citations in the sprint memo. The W3 hypothesis was REVISED based on curl evidence — not silently swapped. The "deferred to Phase 5" anti-pattern from Phase 4 iter-1 was NOT repeated; Phase 6 deferral surfaces all carry `data-phase6="true"` with Phase-6 tooltips.
-- **Phase 5 close-out summary:** 11 scope items, 1 dispatch, all 5 tightenings honoured. Total LOC delta across the phase: +400 / -10 backend, +780 / -20 FE, +15 lockdown tests in 1 new file. Iteration budget: 1/3 used. RAG threshold flipped 80→75 across 3 files (backend rag_band, FE ragBand, FE chip palette comments) — historical rows still render, just shift bands at the 75-79 boundary.
+- **Written:** 2026-06-04T20:05:00Z (BUG-ANL-001 fixed in one surgical dispatch — `AnalyzeJournal.jsx` mount-time route guard + defensive `context_id` thread on upload; 8 sibling routes audited; live-preview screenshot evidence captured).
+- **Agent:** bug-anl-001-route-guard.
+- **Mode:** Single-file FE fix, no backend change, no new dependencies. Evidence on file: live-preview screenshot at `/tmp/bug_anl_001_case1.png` showing `/app/analyze` URL backfilled to `?context_id=...` with NO `context_id_required` toast; Case 2 listing renders cleanly with 8+ history rows + upload form. Coverage sweep documented in `sprints/BUG_ANL_001_ANALYZE_ROUTE_GUARD.md` — 8 sibling routes audited, none have the same pattern.
+- **Counts after BUG-ANL-001 close:** ✅31 / 🟡0 / ❌4 / 🚧2 across the original 37 QA items (unchanged). Plus Bug #30 ✅ + Track A Phase 4 ✅ + Track A Phase 5 ✅ + BUG-ANL-001 ✅. **0 new open bugs.**
 
 ---
 
-## Section 8 — Cumulative Health Snapshot (2026-06-04 13:35Z close)
+## Section 8 — Cumulative Health Snapshot (2026-06-04 20:05Z BUG-ANL-001 close)
 
 - ✅ **11 phases shipped + verified**: Track A Phase 1 + 2 + 3 + 4 + 5, Track B B1 (incl. B1b) + B2 + B3 + B4 + B5.
+- ✅ **1 standalone bug closed**: BUG-ANL-001 Analyze Journal route guard.
 - 🟡 **0 phases pending tester.**
-- ❌ **4 ❌ open items** across the 3 QA docs (unchanged — Phase 5 closes Work Studio QA-doc surfaces but parked items remain backlog).
+- ❌ **4 ❌ open items** across the 3 QA docs (unchanged).
+- 🟠 **0 new open bugs.**
 - 🚧 **2 USER-BLOCKED items unchanged:** SendGrid Inbound Parse webhook config (TM3), Google GCP OAuth creds (G2).
-- ✅ **v1 byte-identical guard intact** (2/2 across all 11 phases — `test_solva_v1_unchanged.py` green at every dispatch close).
-- ✅ **Phase 5 lockdown sweep 14/14 PASS** (+ 1 integration-marked deselected by default).
-- ✅ **Aggregate regression sweep 69/69 PASS** (Phase 5 + Phase 4 + Phase 3 + v1 guard + engagement revival).
-- ✅ **Phase 5 raw-curl LIVE PREVIEW evidence:** W3 reproduced + fixed (`/tmp/phase5_w3_repro_v2.py`), FE smoke (`/tmp/phase5_smoke2.png`) shows zero webpack overlay errors and Work Studio page rendering cleanly.
-- ✅ **Phase 6 deferral surfaces flagged** in Section 4: Edit toggle / Inline-edit indicator / Revise-with-AI button all stubbed with `data-phase6="true"` + Phase 6 tooltips; PDF docs permanently exclude Revise-with-AI.
-- ✅ **Phase 5 deprecation flags carry over to Phase 6** (from Phase 4): `analyses.narration` + `analyses.notes` + `analyses.notes_updated_at` BC mirrors scheduled for Phase-6 removal after FE migration.
+- ✅ **v1 byte-identical guard intact** (2/2 across all 11 phases).
+- ✅ **Phase 5 lockdown sweep 14/14 PASS** (+ 1 integration-marked deselected).
+- ✅ **Aggregate regression sweep 69/69 PASS** (Phase 5 iter-1 + iter-2 + Phase 4 + Phase 3 + v1 guard + engagement revival).
+- ✅ **Phase 6 deferral surfaces verified reachable** in source at `DocumentOverlay.jsx` lines 435 / 767 / 817; PDF hides Revise-with-AI via JSX conditional.
 - ✅ **Voice-lint clean** across customer-copy surfaces.
-- ✅ **ESLint clean** on every file touched during Phase 5.
-- ✅ **Ruff clean** on all 6 backend files touched during Phase 5.
+- ✅ **ESLint clean** on every file touched.
+- ✅ **Ruff clean** on all backend files touched during Phase 5.
 
 ---
 
-**Paused per orchestrator instruction.** NOT auto-starting any backlog hygiene pass. User decides next dispatch.
+**Paused per orchestrator instruction.** NOT auto-starting Phase 6 / any backlog hygiene pass / any sibling-route guard generalisation. The minutes-template polish proposal from the Phase 5 iter-2 finish summary remains **DECLINED as gold-plating**. User decides next dispatch (Phase 6 Pre-Read OR the additional QA detail on picker / xls upload bug OR SendGrid / GCP creds — all separately dispatched when they land).

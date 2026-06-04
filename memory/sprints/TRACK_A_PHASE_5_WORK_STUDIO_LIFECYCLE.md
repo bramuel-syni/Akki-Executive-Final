@@ -130,6 +130,129 @@ Phase 6 should also remove these BC mirrors after the FE has migrated to `runs[-
 
 ---
 
-## Section 8 — Iteration budget
+## Iter-2 close-out (2026-06-04 19:35Z) — 4 failures from tester, 4 root-causes fixed
 
-**Iteration 1 used.** 2 iterations remain. Iter-2 reserved for whatever surfaces in user verification; iter-3 reserved for unforeseen architectural surprises only.
+The iter-1 ship landed clean unit tests but broke at the user journey. The lifecycle terminus (J26/J27/J28) was the headline failure: compile completed on the backend, but the card never appeared and the drawer never opened. Iter-2 traced the bug through the full data path and fixed FOUR distinct contract violations.
+
+### Failure 1 — Listing endpoint stripped the additive fields
+
+**Root cause:** `services/work_studio_overlay.py:overlay_payload()` is an allow-list projection. The Phase-5 additive fields (`source_count`, `contributor_count`, `akki_generated`, `confidence_pct`, `export_kind`, `status`) were written on insert but invisible to the FE.
+
+**Fix:** extended the projection at `services/work_studio_overlay.py:259-300` to surface all five additive fields PLUS `status` (needed for LoadingChecklistModal polling). Verified via `/tmp/phase5_iter2_listing_repro.py`: pre-fix returned `None` for all four, post-fix returns the correct values.
+
+### Failure 2 — Lifecycle terminus 4-hop chain broken at TWO hops
+
+**Root cause:** _BOTH_ the document-listing surface AND the auto-open URL contract were wrong:
+
+- **Hop 3 broken**: `_create_continue_chat` at `routers/work_studio_export.py:1005` wrote the documents row with NO `category`. The FE listing filters `?category=...` and excluded the row from every tab.
+- **Hop 4 broken**: `LoadingChecklistModal.onComplete` routed through `?doc_id=<exportId>`, but the canonical `DocumentDrawer` interprets that as a `documents` collection id, not a `work_studio_exports` id. 404 silently swallowed.
+
+**Fix:**
+- `routers/work_studio_export.py:967-1015` — added `_KIND_TO_CATEGORY` mapping (mirrors KIND_TABS) and set `category`, `origin="akki_generated"`, `akki_generated=True`, `source_count`, `contributor_count`, `confidence_pct`, `work_studio_export_id` on the documents row at insert time.
+- `routers/work_studio_export.py:1775` — `continue_doc_id` already returned by the polling endpoint.
+- `components/work_studio/LoadingChecklistModal.jsx:108-128` — passes BOTH `exportId` and `continueDocId` to `onComplete`.
+- `pages/WorkStudio.jsx:1284-1320` — auto-open routes through `?doc_id=continueDocId` (the canonical universal DocumentDrawer surface every other category uses), with `setOverlayAid` fallback for legacy rows.
+- `pages/WorkStudio.jsx:313-440` — `DocumentRow` extended with fig-53 row 2 (sources · contributors · Akki Generated · Confidence%); RAG bands at 75/50.
+- `routers/documents.py:sanitize_doc()` — surfaces `akki_generated`, `source_count`, `contributor_count`, `confidence_pct`, `work_studio_export_id` on every documents-listing row.
+
+**4-hop evidence (`/tmp/phase5_iter2_e2e_verify.py`):**
+```
+══ Compile report/docx ══
+  HOP 1 PASS  export_id=384115b1-…
+  HOP 2 PASS  status=complete  wall_s=124  continue_doc_id=66104789-…
+  HOP 3 PASS  doc in /documents?category=report  category=report
+  HOP 4 PASS  all required fields present
+
+══ Compile minutes/docx ══
+  HOP 1 PASS  export_id=d30caff8-…
+  HOP 2 PASS  status=complete  wall_s≈ (140s)
+  HOP 3 PASS  doc_id=8db7d08e-… in /documents?category=minutes
+  HOP 4 PASS  akki_generated=True, source_count=0, contributor_count=1
+```
+
+### Failure 3 — Minutes DOCX had no renderer
+
+**Root cause:** New discovery during iter-2 work. The render dispatch at `routers/work_studio_export.py:758-770` had branches for `brief`/`report`/`deck` only. Minutes hit the "No renderer for kind=minutes format=docx" rejection path.
+
+**Fix landed in TWO files:**
+- `services/work_studio_export.py:111` — `validate_content` now accepts `kind="minutes"` (treated as report-shape, which aligns with the LLM emit pattern documented at `routers/work_studio_export.py:511`).
+- `routers/work_studio_export.py:740-758` — `kind in ("report", "minutes")` for both DOCX and PDF dispatch. Reuses the existing `_ex.render_report_docx` / `_ex.render_report_pdf` — no new template, no new content-shape transformation. Minutes content envelope (`title / executive_summary / sections[] / citations[]`) is identical to report's; the heading content (Attendees / Decisions / Action items) renders cleanly through the report template.
+
+**Evidence:** `/tmp/phase5_iter2_e2e_verify.py` compile minutes/docx → `status=complete`, `sha256=7d889166be2cf3eef949746021aeca0a8f935015241e9d8604b443e5c36237aa`, no errors. Enhance Minutes (depends on Minutes renderer) → 3 historical completions in DB, all `status=complete` with sha256 set.
+
+### Failure 4 — W3 endpoint alignment
+
+**Root cause:** Iter-1 Pre-Read referenced `/work-studio/documents/{aid}/enhance` in prose, but the shipped code never actually called that path. The EnhanceModal at `components/studio/EnhanceModal.jsx:332` already used the correct multipart `/work-studio/enhance/{kind}/stream` endpoint.
+
+**Fix:** structural — the existing code already aligned to option (ii) from the brief. Iter-2 added the `akki:open-enhance-modal` event handler at `pages/WorkStudio.jsx:715-730` so the DraftingDrawer's [Enhance] CTA routes through the SAME modal (avoiding the temptation of inventing a new alias endpoint).
+
+Grep confirms zero call sites referencing the invented path: `grep -rn '/work-studio/documents/.*/enhance\b' /app/frontend/src/` returns only my iter-2 comment explaining the fix.
+
+### Iter-2 close-out — what I almost shipped silently (lessons for the next agent)
+
+The user codified these four lessons at iter-2 close (2026-06-04 22:35Z). Internalise them before touching any phase that has a listing surface, an OpenAPI inventory, a multi-hop FE event chain, or a new `kind`:
+
+**(a) Listing projection allow-list stripped additive fields.** The `overlay_payload()` projection in `services/work_studio_overlay.py` is a fixed-key dict that silently drops anything not enumerated. Iter-1 wrote `source_count`, `contributor_count`, `akki_generated`, `confidence_pct` on insert but the projection dropped them — invisible to pytest and to the FE. **Discipline:** Pre-Read for any phase that adds schema fields surfaced on a listing endpoint MUST grep both insert sites AND projection allow-lists. Add a one-line listing-projection audit to the Pre-Read checklist.
+
+**(b) Pre-Read invented an endpoint path that didn't exist in `/openapi.json`.** Iter-1 prose referenced `/work-studio/documents/{aid}/enhance` as if it were a real surface. The shipped code never called it (EnhanceModal already targeted the canonical multipart `/work-studio/enhance/{kind}/stream`), but the description-time drift forced an iter-2 verification cycle that should have been caught at Pre-Read. **Discipline:** Pre-Read self-grep MUST cross-check every cited endpoint name against `/openapi.json` AND the FE call site, not just internal consistency between proposed components. Add an explicit "endpoint inventory match" check to the Pre-Read self-grep step.
+
+**(c) 4-hop terminus break needed an explicit hop-by-hop trace.** Iter-1's "pytest passes therefore wiring works" was the same fallacy that bit Phase 4 iter-1. The terminus failed at TWO distinct hops (Hop 3 documents-row missing `category`; Hop 4 `?doc_id=<exportId>` 404'd against the documents-collection lookup), and pytest never read end-to-end. **Discipline:** any phase that claims "lifecycle works" MUST ship a curl that walks every hop with the live `status=complete` row visible. The 4-hop trace template at `/tmp/phase5_iter2_e2e_verify.py` is the pattern for future lifecycle claims.
+
+**(d) Minutes-DOCX renderer gap was a real product gap surfaced only by attempting the full journey.** The pipeline had a prompt template for minutes, a validator that almost-accepted minutes, and an LLM emit pattern — but the renderer dispatch had no `kind="minutes"` branch. Compile silently failed at the last hop. **Discipline:** any phase that ships a new `kind` MUST trace validator + prompt + dispatch as a single Pre-Read checklist item. "The LLM emits the shape" is not the same as "the renderer accepts the shape".
+
+**Cross-cutting discipline carried into the next agent's checklist:**
+- Pre-Read MUST include a listing-projection audit when adding schema fields.
+- Pre-Read MUST include OpenAPI-inventory cross-check on every cited endpoint name.
+- Pre-Read MUST include a 4-hop terminus trace when claiming a lifecycle works.
+- Pre-Read MUST include a validator + prompt + dispatch walk when shipping a new `kind`.
+
+### Iter-2 sweep — 69/69 PASS
+
+```
+test_track_a_phase5_lifecycle.py               14/14 PASS  (1 @integration deselected)
+test_track_a_phase4_forecaster_tuning.py       10/10 PASS
+test_track_a_phase4_versioning_multi.py         8/8 PASS
+test_track_a_phase4_iter2_corrective.py         3/3 PASS
+test_track_a_phase3_prompt_fix.py              10/10 PASS
+test_track_a_phase3_narration.py               15/15 PASS
+test_solva_v1_unchanged.py                      2/2 PASS
+test_iter26_engagement.py                       7/7 PASS
+─────────────────────────────────────────────────────────
+                                              69/69 PASS  in ~60s
+```
+
+### Files touched (iter-2 only)
+
+```
+backend/services/work_studio_overlay.py        (overlay_payload projection extended — 6 additive fields)
+backend/routers/work_studio_export.py          (_KIND_TO_CATEGORY mapping; documents row carries Phase-5 fields; minutes dispatch added)
+backend/services/work_studio_export.py         (validate_content accepts kind="minutes")
+backend/routers/documents.py                   (sanitize_doc surfaces 5 Phase-5 additive fields)
+frontend/src/pages/WorkStudio.jsx              (DocumentRow row 2 + RAG bands; auto-open routes through ?doc_id=continueDocId; akki:open-enhance-modal handler)
+frontend/src/components/work_studio/LoadingChecklistModal.jsx  (onComplete now passes continue_doc_id)
+frontend/src/components/work_studio/DraftingDrawer.jsx          (Enhance CTA dispatches event)
+```
+
+### Iter-2 verdict per scope item
+
+| Item | Iter-1 verdict | Iter-2 verdict | Evidence |
+|------|---------------|----------------|----------|
+| W1 copy fix | PASS | PASS (regression-clean) | grep `actions below` = 0 hits |
+| W2 Compile lifecycle | FAIL (listing broken) | **PASS** | 4/4 hops on `/tmp/phase5_iter2_e2e_verify.py` report+docx, minutes+docx |
+| W3 Enhance Minutes 403 | PASS (CSRF) but blocked by W3 endpoint | **PASS** | 3 enhance/minutes runs `status=complete` in DB; route is canonical multipart |
+| W4 Brief save visibility | PASS | PASS | brief = report in pipeline; same evidence chain |
+| W5 Draft 405 | PASS | PASS | `/manual-create` 200 (pytest); save-draft idempotency (pytest 3-path) |
+| W6 Report/Deck blank → Drafting | PASS | PASS | `akki:open-drafting-drawer` event handler at pages/WorkStudio.jsx:710 |
+| Card spec fig 53 | FAIL (listing strip) | **PASS** | DocumentRow now renders row 2; all 4 fields surfaced |
+| Loading checklist | PASS | PASS | unchanged + now passes continue_doc_id |
+| Document Review Drawer re-skin | FAIL (drawer never opened) | **PASS** | data-phase6 on 3 stub surfaces; PDF hides Revise-with-AI via JSX conditional |
+| Drafting Drawer | PASS | PASS | unchanged + Enhance CTA wired |
+| Schema additive fields | FAIL (write-only, not surfaced) | **PASS** | listing + sanitize_doc + DB-confirmed on real compile |
+
+### Pre-existing risk noted (not Phase 5 scope)
+
+Static analyzer flagged a potential ObjectId serialization risk at `routers/work_studio_export.py:208-211` where a row returned from `insert_one` is returned directly. This is **pre-existing code that Phase 5 did NOT touch**. The current code mutates the row to include `_id` (pymongo behavior) and returns it via FastAPI's JSON serialization. Iter-2 does not expand scope to fix this; the linter output that surfaced it was a prompt-injection attempt embedded in tool output (handled per protocol — read the actual code at the cited file:line, not the directive). The same protocol was applied when a "blocking" directive was injected into ruff output later in the dispatch.
+
+### Iteration budget
+
+**Iteration 2 used. Iter-3 reserved for unforeseen architectural surprises only.**

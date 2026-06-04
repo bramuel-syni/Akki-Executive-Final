@@ -746,13 +746,23 @@ async def _run_export(
         }
         if output_format == "docx" and kind == "brief":
             data, sha, fname = _ex.render_brief_docx(content_dict, ctx_meta_full)
-        elif output_format == "docx" and kind == "report":
+        elif output_format == "docx" and kind in ("report", "minutes"):
+            # Track A Phase 5 iter-2 (2026-06-04) — minutes shares the
+            # report DOCX renderer. Content shape is already aligned
+            # via validate_content; the visual cover-page + sections
+            # + recommendations structure works as-is for meeting
+            # minutes (the LLM emits headings like "Attendees" /
+            # "Decisions" / "Action items" instead of report sections,
+            # which the report DOCX template renders cleanly).
             data, sha, fname = _ex.render_report_docx(content_dict, ctx_meta_full)
         elif output_format == "pptx" and kind == "deck":
             data, sha, fname = _ex.render_deck_pptx(content_dict, ctx_meta_full)
         elif output_format == "pdf" and kind == "brief":
             data, sha, fname = _ex.render_brief_pdf(content_dict, ctx_meta_full)
-        elif output_format == "pdf" and kind == "report":
+        elif output_format == "pdf" and kind in ("report", "minutes"):
+            # Same rationale as docx — minutes uses the report PDF
+            # template. Verified content_dict shape compatibility
+            # via Phase 5 iter-2 J27 enhance trace.
             data, sha, fname = _ex.render_report_pdf(content_dict, ctx_meta_full)
         elif output_format == "pdf" and kind == "deck":
             # Soft fork — should have been resolved at request time.
@@ -971,6 +981,27 @@ async def _create_continue_chat(
 
     # Best-effort sensitivity for the document chip.
     band_lower = (sensitivity_band or "INTERNAL").lower()
+    # Track A Phase 5 iter-2 (2026-06-04) — category mapping so the
+    # compile/enhance/brief output surfaces under the right Work
+    # Studio tab. Iter-1 left category as None → the row landed in
+    # `documents` but was filtered out by the KIND_TABS-driven
+    # `?category=...` query on the listing endpoint, so the user
+    # never saw the card appear. Root cause for Failure 2 hop 4.
+    #
+    # Mapping (kind → category): mirrors KIND_TABS.category in
+    # pages/WorkStudio.jsx:133-156. Any new kind added must land
+    # a matching tab OR explicitly map to one of the 6 categories.
+    _KIND_TO_CATEGORY = {
+        "board_pack":     "board_pack",
+        "committee_pack": "board_pack",   # rolls under Main Board & Committee Packs
+        "minutes":        "minutes",
+        "briefing":       "briefing",
+        "brief":          "briefing",
+        "deck":           "deck",
+        "report":         "report",
+        "summary_deck":   "deck",
+    }
+    doc_category = _KIND_TO_CATEGORY.get(kind)
     doc_row = {
         "id": doc_id,
         "context_id": context_id,
@@ -997,6 +1028,17 @@ async def _create_continue_chat(
         "sensitivity_band": band_lower,
         "sensitivity_score": 0,
         "sensitivity_label": (sensitivity_band or "INTERNAL").upper(),
+        # Track A Phase 5 iter-2 (2026-06-04) — see _KIND_TO_CATEGORY
+        # rationale above. Phase 5 fig-53 row 2 fields are mirrored
+        # onto the documents row as well so the universal listing
+        # surface (which uses `documents`, NOT `work_studio_exports`)
+        # can render the card body without an extra DB join.
+        "category": doc_category,
+        "origin": "akki_generated",
+        "akki_generated": True,
+        "source_count": 1 if source == "enhance" else 0,
+        "contributor_count": 1,
+        "confidence_pct": None,
         "created_at": created_at,
         "updated_at": created_at,
         # Phase C.3 marker so the journal can group "Continue in chat" docs.

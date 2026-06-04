@@ -143,9 +143,21 @@ export default function DraftingDrawer({
   };
 
   const handleEnhanceClick = async () => {
-    // Ensure the draft is saved at least once so an export_id exists.
+    // Track A Phase 5 iter-2 (2026-06-04, Failure 3): the Pre-Read
+    // referenced a `/work-studio/documents/{aid}/enhance` endpoint
+    // that does not exist on the backend. The canonical surface is
+    // the multipart `/work-studio/enhance/{kind}` (covered by the
+    // shipped EnhanceModal). The Drafting Drawer's [Enhance] CTA
+    // routes through that same modal via the `akki:open-enhance-
+    // modal` event so we do not introduce endpoint drift OR a new
+    // alias route. Listener lives in pages/WorkStudio.jsx.
     if (!exportId) {
       await handleSaveClick();
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("akki:open-enhance-modal", {
+        detail: { kind, sourceArtefactId: exportId, sourceTitle: title },
+      }));
     }
     if (onEnhance && exportId) onEnhance(exportId);
   };
