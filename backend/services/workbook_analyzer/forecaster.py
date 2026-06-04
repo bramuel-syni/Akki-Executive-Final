@@ -156,4 +156,52 @@ def run_forecast(
     )
 
 
-__all__ = ["run_forecast"]
+def autopick_forecast_columns(
+    *,
+    sheets: List[Any],
+) -> Optional[Dict[str, Any]]:
+    """Bug #30 fix (2026-06-04) — column-pair auto-picker.
+
+    Returns `{sheet, date_column, value_column}` for the strongest
+    signal pair OR None if no viable pair exists.
+
+    Heuristic: find sheets with at least one `date` column AND one
+    or more `numeric` columns. Pick the (date, numeric) pair with
+    the HIGHEST non-null count on the numeric column. If two ties,
+    prefer the numeric column with the larger variance — that's
+    where the strongest forecastable signal usually lives.
+
+    Returns None if no sheet has both a date and a numeric column.
+    The synthesize endpoint then skips forecast for this Analysis
+    rather than calling `run_forecast` and tripping the
+    `need at least 3 (date, value) pairs` error.
+    """
+    best: Optional[Dict[str, Any]] = None
+    best_score: Tuple[int, float] = (0, 0.0)
+    for sheet in sheets:
+        cols = getattr(sheet, "columns", [])
+        date_cols = [c for c in cols if c.kind == "date"]
+        numeric_cols = [c for c in cols if c.kind == "numeric"]
+        if not date_cols or not numeric_cols:
+            continue
+        for date_col in date_cols:
+            for num_col in numeric_cols:
+                # Score: (non_null_count, variance) — descending sort.
+                # Variance proxied by sample value spread for now.
+                samples = [
+                    float(v) for v in (num_col.sample_values or [])
+                    if isinstance(v, (int, float))
+                ]
+                spread = (max(samples) - min(samples)) if len(samples) >= 2 else 0.0
+                score = (num_col.non_null_count, spread)
+                if score > best_score:
+                    best_score = score
+                    best = {
+                        "sheet": sheet.name,
+                        "date_column": date_col.name,
+                        "value_column": num_col.name,
+                    }
+    return best
+
+
+__all__ = ["run_forecast", "autopick_forecast_columns"]

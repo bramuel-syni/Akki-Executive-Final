@@ -168,6 +168,82 @@ function QuestionDrawer({ row, contextIdGetter, onClose, onAnswered, navigate })
     }
   };
 
+  // ── Track B Phase B3 (2026-06-04) — Share / Reopen / Link Response ──
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareRecipients, setShareRecipients] = useState("");
+  const [shareMessage, setShareMessage] = useState("");
+  const [shareBusy, setShareBusy] = useState(false);
+  const onShareSubmit = async () => {
+    const cid = contextIdGetter ? contextIdGetter(row) : row.context_id;
+    if (!cid) { toast.error("Missing context id."); return; }
+    const recipients = shareRecipients
+      .split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    if (recipients.length === 0) {
+      toast.error("Enter at least one recipient.");
+      return;
+    }
+    setShareBusy(true);
+    try {
+      await api.post(`/contexts/${cid}/questions/${row.id}/share`, {
+        recipient_emails: recipients,
+        message: shareMessage.trim() || null,
+      });
+      toast.success("Share recorded.");
+      setShareOpen(false);
+      setShareRecipients("");
+      setShareMessage("");
+      onAnswered && onAnswered();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally { setShareBusy(false); }
+  };
+
+  const [reopenBusy, setReopenBusy] = useState(false);
+  const onReopen = async () => {
+    const cid = contextIdGetter ? contextIdGetter(row) : row.context_id;
+    if (!cid) { toast.error("Missing context id."); return; }
+    setReopenBusy(true);
+    try {
+      await api.post(`/contexts/${cid}/questions/${row.id}/reopen`);
+      toast.success("Question reopened.");
+      onAnswered && onAnswered();
+      onClose && onClose();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally { setReopenBusy(false); }
+  };
+
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkDocs, setLinkDocs] = useState([]);
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const openLinkPicker = async () => {
+    const cid = contextIdGetter ? contextIdGetter(row) : row.context_id;
+    if (!cid) { toast.error("Missing context id."); return; }
+    setLinkOpen(true);
+    setLinkLoading(true);
+    try {
+      const { data } = await api.get(`/contexts/${cid}/documents`);
+      setLinkDocs(Array.isArray(data) ? data : []);
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally { setLinkLoading(false); }
+  };
+  const selectLinkDoc = async (docId) => {
+    const cid = contextIdGetter ? contextIdGetter(row) : row.context_id;
+    setLinkBusy(true);
+    try {
+      await api.post(`/contexts/${cid}/questions/${row.id}/link-response`, {
+        document_id: docId,
+      });
+      toast.success("Response document linked.");
+      setLinkOpen(false);
+      onAnswered && onAnswered();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally { setLinkBusy(false); }
+  };
+
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose && onClose()}>
       <SheetContent
@@ -281,7 +357,154 @@ function QuestionDrawer({ row, contextIdGetter, onClose, onAnswered, navigate })
               <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
               Use in Chat
             </Button>
+            {/* Track B Phase B3 (2026-06-04) — Share */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShareOpen(true)}
+              className="rounded-sm border-[var(--rule)] text-[12px]"
+              data-testid="question-drawer-share"
+            >
+              Share
+            </Button>
+            {/* Track B Phase B3 (2026-06-04) — Reopen (Answered only) */}
+            {isAnswered && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onReopen}
+                disabled={reopenBusy}
+                className="rounded-sm border-[var(--rule)] text-[12px]"
+                data-testid="question-drawer-reopen"
+              >
+                {reopenBusy
+                  ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  : null}
+                Reopen
+              </Button>
+            )}
+            {/* Track B Phase B3 (2026-06-04) — Link response doc */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={openLinkPicker}
+              className="rounded-sm border-[var(--rule)] text-[12px]"
+              data-testid="question-drawer-link-response"
+            >
+              Link response document
+            </Button>
           </div>
+
+          {/* Track B Phase B3 (2026-06-04) — Related document (when linked).
+              source_doc_id is set when the question was generated from a
+              document; response_doc_id is set when a user attached a
+              follow-up response doc. Both render here. */}
+          {(row.source_doc_id || row.response_doc_id) && (
+            <div className="mb-4 border border-[var(--rule)] rounded-sm p-3 bg-[var(--cream-deep)]/30" data-testid="question-drawer-related-docs">
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1.5">Related documents</p>
+              {row.source_doc_id && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/app/documents?id=${encodeURIComponent(row.source_doc_id)}`)}
+                  className="block text-[12.5px] text-[var(--ink)] hover:underline"
+                  data-testid="question-drawer-source-doc"
+                >
+                  Source: {row.source_doc_title || row.source_doc_id}
+                </button>
+              )}
+              {row.response_doc_id && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/app/documents?id=${encodeURIComponent(row.response_doc_id)}`)}
+                  className="block text-[12.5px] text-[var(--ink)] hover:underline mt-1"
+                  data-testid="question-drawer-response-doc"
+                >
+                  Response: {row.response_doc_id}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Share modal */}
+          {shareOpen && (
+            <div
+              className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+              data-testid="question-drawer-share-modal"
+            >
+              <div className="bg-white border border-[var(--rule)] rounded-sm w-full max-w-md p-5">
+                <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-2">Share question</p>
+                <input
+                  type="text"
+                  value={shareRecipients}
+                  onChange={(e) => setShareRecipients(e.target.value)}
+                  placeholder="recipient@company.com, …"
+                  className="w-full text-[13px] border border-[var(--rule)] rounded-sm px-2 py-1.5 mb-2"
+                  data-testid="question-drawer-share-recipients"
+                />
+                <textarea
+                  value={shareMessage}
+                  onChange={(e) => setShareMessage(e.target.value)}
+                  placeholder="Optional message"
+                  rows={3}
+                  className="w-full text-[13px] border border-[var(--rule)] rounded-sm px-2 py-1.5 mb-3"
+                  data-testid="question-drawer-share-message"
+                />
+                <div className="flex gap-2 justify-end">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setShareOpen(false)} disabled={shareBusy}>Cancel</Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={onShareSubmit}
+                    disabled={shareBusy || !shareRecipients.trim()}
+                    data-testid="question-drawer-share-send"
+                  >
+                    {shareBusy ? "Sending…" : "Send"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Link-response picker */}
+          {linkOpen && (
+            <div
+              className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+              data-testid="question-drawer-link-picker"
+            >
+              <div className="bg-white border border-[var(--rule)] rounded-sm w-full max-w-lg p-5">
+                <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-2">
+                  Select a response document
+                </p>
+                {linkLoading ? (
+                  <p className="text-[12.5px] text-[var(--muted)]">Loading documents…</p>
+                ) : linkDocs.length === 0 ? (
+                  <p className="text-[12.5px] text-[var(--muted)]">No documents in this context.</p>
+                ) : (
+                  <ul className="max-h-[40vh] overflow-y-auto space-y-1 mb-3">
+                    {linkDocs.map((d) => (
+                      <li key={d.id}>
+                        <button
+                          type="button"
+                          onClick={() => selectLinkDoc(d.id)}
+                          disabled={linkBusy}
+                          className="w-full text-left px-3 py-2 hover:bg-[var(--cream-deep)]/40 text-[13px] text-[var(--ink)] border border-[var(--rule)] rounded-sm"
+                          data-testid={`question-drawer-link-doc-${d.id}`}
+                        >
+                          {d.title || d.filename || d.id}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="flex justify-end">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setLinkOpen(false)}>Cancel</Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {(row.history || []).length > 0 && (
             <div data-testid="question-drawer-history">
@@ -571,33 +794,34 @@ export default function Questions() {
           )}
           emptyState={
             <div className="border border-dashed border-[var(--rule)] rounded-sm bg-[var(--parchment)] px-6 py-8 text-center" data-testid="questions-empty">
-              <p className="akki-serif text-[15px] text-[var(--ink)]">
-                {filter === "answered" ? "No answered questions to show." : "Nothing waiting on you."}
-              </p>
-              <p className="text-[12.5px] text-[var(--muted)] mt-1">
+              {/* Track B Phase B3 (2026-06-04) — G23. Verbatim copy
+                  from the Google Login + Doc Reader + Calendar +
+                  Open Questions QA doc, paragraph 26:
+                  "You have not generated any questions yet. Go to a
+                  document to generate questions." with CTA
+                  "Go to Document". The legacy Z2.4 "Run Solva on a
+                  document" CTA is folded into this verbatim QA
+                  empty-state when the filter is Open or All. */}
+              <p className="akki-serif text-[15px] text-[var(--ink)]" data-testid="questions-empty-headline">
                 {filter === "answered"
-                  ? "Once you answer a question it appears here."
-                  : "When NEDs raise questions assigned to you, they land in this list."}
+                  ? "No answered questions to show."
+                  : "You have not generated any questions yet. Go to a document to generate questions."}
               </p>
-              {/* Z2.4 (2026-02) — empty-state dead-end CTA. When a
-                  founder lands on Open questions with zero items, give
-                  them the next executive action that produces
-                  questions worth answering: run Solva on a document.
-                  Only shown on the Open filter (the answered/all
-                  branches don't benefit from this nudge). */}
+              {filter === "answered" && (
+                <p className="text-[12.5px] text-[var(--muted)] mt-1">
+                  Once you answer a question it appears here.
+                </p>
+              )}
               {filter !== "answered" && (
                 <div className="mt-5">
                   <Button
                     type="button"
-                    onClick={() => navigate("/app/solva")}
+                    onClick={() => navigate("/app/documents")}
                     className="bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm"
-                    data-testid="questions-empty-run-solva"
+                    data-testid="questions-empty-go-to-document"
                   >
-                    Run Solva on a document
+                    Go to Document
                   </Button>
-                  <p className="text-[11.5px] text-[var(--muted)] mt-2.5">
-                    Solva reads what you brought and surfaces the questions worth raising.
-                  </p>
                 </div>
               )}
             </div>

@@ -328,3 +328,170 @@ async def mark_question_answered(
     )
     return _strip(rec2)
 
+
+# -----------------------------------------------------------------------------
+# Track B Phase B3 (2026-06-04) — Open Questions feature completion.
+# -----------------------------------------------------------------------------
+#
+# Three endpoints land here:
+#   POST /contexts/{cid}/questions/{qid}/share        — emits a share audit
+#   POST /contexts/{cid}/questions/{qid}/reopen       — Answered → Open
+#   POST /contexts/{cid}/questions/{qid}/link-response — associates a
+#                                                       response document
+#
+# Pattern: same `require_context_membership` dependency, same
+# history[] append. New `kind` values:
+#   "shared"           — recipient + optional message captured in note
+#   "reopened"         — Answered → Open transition
+#   "response_linked"  — response_doc_id set on the question
+#
+# All three are idempotent on the no-op call (no double-audit).
+
+
+class ShareIn(BaseModel):
+    """Body for `POST /contexts/{cid}/questions/{qid}/share`."""
+    recipient_emails: List[str] = Field(..., min_length=1, max_length=10)
+    message: Optional[str] = Field(default=None, max_length=1000)
+
+
+class LinkResponseIn(BaseModel):
+    """Body for `POST /contexts/{cid}/questions/{qid}/link-response`.
+    The picker lands a `document_id` from the current context's
+    document journal."""
+    document_id: str = Field(..., min_length=1, max_length=200)
+
+
+@router.post("/contexts/{context_id}/questions/{question_id}/share")
+async def share_question(
+    context_id: str,
+    question_id: str,
+    body: ShareIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Record a share event on the question. Phase B3 captures the
+    audit + recipient list; actual email delivery is deferred until
+    the SendGrid Inbound Parse blocker is unblocked (USER-BLOCKED in
+    MASTER_STATE Section 5)."""
+    me = ctx["account"]
+    rec = await db.cycle_questions.find_one(
+        {"id": question_id, "context_id": context_id}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Question not found.")
+    now_iso = _iso(_now())
+    history = list(rec.get("history") or [])
+    note_payload = {
+        "recipients": list(body.recipient_emails),
+        "message": (body.message or "").strip()[:500] or None,
+    }
+    history.append({
+        "ts":       now_iso,
+        "kind":     "shared",
+        "actor_id": me["id"],
+        "note":     str(note_payload)[:500],
+        "payload":  note_payload,
+    })
+    await db.cycle_questions.update_one(
+        {"id": question_id, "context_id": context_id},
+        {"$set": {"history": history}},
+    )
+    return _strip(await db.cycle_questions.find_one(
+        {"id": question_id, "context_id": context_id}, {"_id": 0},
+    ))
+
+
+@router.post("/contexts/{context_id}/questions/{question_id}/reopen")
+async def reopen_question(
+    context_id: str,
+    question_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Flip Answered → Open. Idempotent on already-Open (200 no-op,
+    no new audit row). Guards against reopening a question that
+    was never closed in the first place — that returns 400."""
+    me = ctx["account"]
+    rec = await db.cycle_questions.find_one(
+        {"id": question_id, "context_id": context_id}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Question not found.")
+    cur = rec.get("status", "open")
+    if cur == "open":
+        # Already open — emit if it was never answered, refuse if
+        # it was never closed in the first place. The dispatch
+        # contract distinguishes these cases.
+        was_ever_answered = any(
+            h.get("kind") in ("marked_answered", "answered")
+            for h in (rec.get("history") or [])
+        )
+        if not was_ever_answered:
+            raise HTTPException(
+                status_code=400, detail="Question was never closed.",
+            )
+        # Idempotent no-op — already open after a prior reopen.
+        return _strip(rec)
+    now_iso = _iso(_now())
+    history = list(rec.get("history") or [])
+    history.append({
+        "ts":       now_iso,
+        "kind":     "reopened",
+        "actor_id": me["id"],
+        "note":     "",
+    })
+    await db.cycle_questions.update_one(
+        {"id": question_id, "context_id": context_id},
+        {"$set": {
+            "status":      "open",
+            "history":     history,
+        },
+         "$unset": {"answered_at": "", "answered_by_account_id": ""}},
+    )
+    return _strip(await db.cycle_questions.find_one(
+        {"id": question_id, "context_id": context_id}, {"_id": 0},
+    ))
+
+
+@router.post("/contexts/{context_id}/questions/{question_id}/link-response")
+async def link_response_doc(
+    context_id: str,
+    question_id: str,
+    body: LinkResponseIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Attach a response document to the question. The document
+    must live in the same `context_id` (cross-tenant blocked by
+    `require_context_membership`; cross-context blocked here)."""
+    me = ctx["account"]
+    rec = await db.cycle_questions.find_one(
+        {"id": question_id, "context_id": context_id}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Question not found.")
+    doc = await db.documents.find_one(
+        {"id": body.document_id, "context_id": context_id}, {"_id": 0},
+    )
+    if not doc:
+        raise HTTPException(
+            status_code=404,
+            detail="Response document not found in this context.",
+        )
+    now_iso = _iso(_now())
+    history = list(rec.get("history") or [])
+    history.append({
+        "ts":       now_iso,
+        "kind":     "response_linked",
+        "actor_id": me["id"],
+        "note":     body.document_id,
+    })
+    await db.cycle_questions.update_one(
+        {"id": question_id, "context_id": context_id},
+        {"$set": {
+            "response_doc_id": body.document_id,
+            "history":         history,
+        }},
+    )
+    return _strip(await db.cycle_questions.find_one(
+        {"id": question_id, "context_id": context_id}, {"_id": 0},
+    ))
+
+

@@ -49,6 +49,7 @@ from services.workbook_analyzer import (
     WorkbookCitationResolver,
     WorkbookColumn,
     WorkbookSheet,
+    autopick_forecast_columns,
     build_docx_report,
     build_pptx_report,
     build_xlsx_report,
@@ -59,6 +60,7 @@ from services.workbook_analyzer import (
     run_monte_carlo,
     validate_no_imperatives,
 )
+from services.solva_v2.analyze_narration import narrate_analysis  # Track A Phase 3
 
 # Track A Phase 1 (2026-06-03) — new sibling Analysis entity + service.
 from models.analysis import Analysis  # noqa: F401  re-export available for callers
@@ -715,6 +717,173 @@ async def get_analysis_v2(aid: str, current: Dict[str, Any] = Depends(get_curren
     if not row:
         raise HTTPException(404, "analysis_not_found")
     return row
+
+@router.post("/v2/analyses/{aid}/synthesize")
+async def synthesize_v2_endpoint(
+    aid: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Track A Phase 3 (2026-06-04) — Solva v2 Analyze narration.
+
+    Loads the new `Analysis` entity (`ana-*`), runs deterministic
+    analyzers on the source blobs, asks Claude Sonnet via Shield
+    for a headline-first narration, validates citations against
+    the deterministic citation pool, persists to the entity.
+
+    Idempotent — re-call with unchanged content returns the
+    cached narration via `narration.cache_key`.
+
+    Bug #30 — uses `autopick_forecast_columns` so workbooks with
+    valid (date, value) pairs no longer trip
+    `forecast_invalid: need at least 3 (date, value) pairs`.
+    """
+    row = await db.analyses.find_one(
+        {"id": aid, "account_id": current["id"]}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(404, "analysis_not_found")
+
+    blobs = await db.analysis_blobs.find(
+        {"analysis_id": aid, "account_id": current["id"]}, {"_id": 0},
+    ).to_list(length=None)
+    if not blobs:
+        # Sources purged on session-close → no fabrication.
+        update = {
+            "narration": {
+                "headline": "",
+                "observations": [],
+                "citations": [],
+                "cache_key": "",
+                "refused": True,
+                "refusal_reason": "sources_purged",
+            },
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.analyses.update_one(
+            {"id": aid, "account_id": current["id"]}, {"$set": update},
+        )
+        return update["narration"]
+
+    first_blob = blobs[0]
+    raw_bytes = base64.b64decode(first_blob["data_b64"])
+    fmt = first_blob.get("file_format", "xlsx")
+    try:
+        sheets, matrices = parse_workbook(blob=raw_bytes, file_format=fmt)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"workbook_parse_failed: {e!s:.140}")
+
+    wba = WorkbookAnalysis(
+        id="wba-narr-" + aid[-12:],
+        account_id=current["id"],
+        context_id=row.get("context_id"),
+        document_id=aid,
+        filename=first_blob.get("filename", "analysis"),
+        file_format=fmt,
+        file_size_bytes=len(raw_bytes),
+        status="ready",
+        sheets=sheets,
+        signals=[], simulations=[], forecasts=[], anomalies=[],
+    )
+    resolver = WorkbookCitationResolver(sheets)
+
+    # Signals — every sheet.
+    all_signals = []
+    for sheet in sheets:
+        matrix = matrices.get(sheet.name, [])
+        try:
+            sigs = extract_signals_for(sheet=sheet, sheet_matrix=matrix)
+        except Exception:  # noqa: BLE001
+            sigs = []
+        for s in sigs:
+            try:
+                validate_no_imperatives(s.detail, label=f"signal.detail/{s.title}")
+                resolver.resolve_many(s.citations)
+            except (RefuseToDecideViolation, CitationUnverifiable):
+                continue
+            all_signals.append(s)
+    wba.signals = all_signals
+
+    # Forecast — Bug #30 autopicker.
+    pick = autopick_forecast_columns(sheets=sheets)
+    if pick is not None:
+        sheet_obj = next((s for s in sheets if s.name == pick["sheet"]), None)
+        if sheet_obj:
+            sheet_matrix = matrices.get(pick["sheet"]) or []
+            date_idx = next(
+                (i for i, c in enumerate(sheet_obj.columns) if c.name == pick["date_column"]), -1,
+            )
+            val_idx = next(
+                (i for i, c in enumerate(sheet_obj.columns) if c.name == pick["value_column"]), -1,
+            )
+            try:
+                fc = run_forecast(
+                    sheet=pick["sheet"],
+                    date_column=pick["date_column"],
+                    value_column=pick["value_column"],
+                    sheet_matrix=sheet_matrix,
+                    header_row_index=sheet_obj.header_row_index,
+                    date_col_index_zero=date_idx,
+                    value_col_index_zero=val_idx,
+                    horizon_periods=8,
+                )
+                resolver.resolve_many(fc.citations)
+                wba.forecasts.append(fc)
+            except (ValueError, CitationUnverifiable):
+                pass
+
+    # Anomalies — top-6 per numeric column on the first sheet.
+    if sheets:
+        first_sheet = sheets[0]
+        first_matrix = matrices.get(first_sheet.name) or []
+        for col in first_sheet.columns:
+            if col.kind != "numeric":
+                continue
+            try:
+                anoms = detect_anomalies(
+                    sheet=first_sheet, column=col,
+                    sheet_matrix=first_matrix,
+                    z_threshold=3.0, iqr_multiplier=1.5,
+                )
+            except Exception:  # noqa: BLE001
+                anoms = []
+            for a in anoms[:6]:
+                try:
+                    resolver.resolve_many(a.citations)
+                except CitationUnverifiable:
+                    continue
+                wba.anomalies.append(a)
+
+    narration = await narrate_analysis(
+        workbook_analysis=wba,
+        account_id=current["id"],
+        objective=row.get("objective", ""),
+        cached=row.get("narration"),
+    )
+
+    update_set: Dict[str, Any] = {
+        "narration":  narration,
+        "headline":   narration.get("headline", ""),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if not narration.get("refused"):
+        lifted = []
+        for obs in narration.get("observations") or []:
+            lifted.append({
+                "id":                 "obs-" + uuid.uuid4().hex[:12],
+                "kind":               obs.get("tab", "synthesis"),
+                "title":              obs.get("title", "")[:200],
+                "detail":             obs.get("body", "")[:2000],
+                "source_id":          None,
+                "citations":          obs.get("citations") or [],
+                "created_at":         datetime.now(timezone.utc).isoformat(),
+            })
+        update_set["observations"] = lifted
+    await db.analyses.update_one(
+        {"id": aid, "account_id": current["id"]}, {"$set": update_set},
+    )
+    return narration
+
+
 
 
 @router.post("/v2/analyses/{aid}/session-close")

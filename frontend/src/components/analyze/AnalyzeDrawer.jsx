@@ -41,6 +41,7 @@ export default function AnalyzeDrawer({ aid, onClose }) {
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("bottom-line");
+  const [synthesizing, setSynthesizing] = useState(false);
 
   // Objective + notes scratchpads (controlled inputs; debounced save).
   const [objective, setObjective] = useState("");
@@ -118,6 +119,28 @@ export default function AnalyzeDrawer({ aid, onClose }) {
     a.click();
     document.body.removeChild(a);
   };
+
+  // Track A Phase 3 (2026-06-04) — trigger Solva v2 synthesis.
+  const onSynthesize = async () => {
+    if (!aid) return;
+    setSynthesizing(true);
+    try {
+      await api.post(`/workbook/v2/analyses/${aid}/synthesize`);
+      toast.success("Synthesis complete");
+      await load();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setSynthesizing(false);
+    }
+  };
+
+  // Split observations by tab.
+  const obsByTab = (analysis?.observations || []).reduce((acc, o) => {
+    const k = o.kind || "synthesis";
+    (acc[k] ||= []).push(o);
+    return acc;
+  }, {});
 
   return (
     <Sheet open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -216,6 +239,27 @@ export default function AnalyzeDrawer({ aid, onClose }) {
                     <MessageSquare className="w-3 h-3 mr-1.5" /> Bottom Line
                   </TabsTrigger>
                   <TabsTrigger
+                    value="what-changed"
+                    className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-[var(--ink)]"
+                    data-testid="analyze-drawer-tab-what-changed"
+                  >
+                    What changed
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="whats-likely-next"
+                    className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-[var(--ink)]"
+                    data-testid="analyze-drawer-tab-whats-likely-next"
+                  >
+                    What's likely next
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="whats-odd"
+                    className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-[var(--ink)]"
+                    data-testid="analyze-drawer-tab-whats-odd"
+                  >
+                    What's odd
+                  </TabsTrigger>
+                  <TabsTrigger
                     value="sources"
                     className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-[var(--ink)]"
                     data-testid="analyze-drawer-tab-sources"
@@ -231,25 +275,53 @@ export default function AnalyzeDrawer({ aid, onClose }) {
                   </TabsTrigger>
                 </TabsList>
 
-                {/* Bottom Line — deterministic stats summary + notes */}
+                {/* Bottom Line — Solva headline + first observations */}
                 <TabsContent
                   value="bottom-line"
                   className="flex-1 overflow-y-auto px-6 py-5 space-y-5"
                   data-testid="analyze-drawer-bottom-line"
                 >
-                  <section>
-                    <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5">
-                      What we have
-                    </p>
-                    <p className="text-[13.5px] text-[var(--ink)] leading-relaxed">
-                      {(analysis.sources || []).length} file{(analysis.sources || []).length === 1 ? "" : "s"} uploaded.
-                      {" "}
-                      {(analysis.observations || []).length === 0
-                        ? "Narration arrives in the next phase — Solva v2 will populate the observations list here. Today the Sources tab carries the per-file stage timings."
-                        : `${(analysis.observations || []).length} observation${(analysis.observations || []).length === 1 ? "" : "s"} on record.`}
-                    </p>
-                  </section>
-
+                  {!analysis.headline && !(analysis.observations || []).length && (
+                    <section data-testid="analyze-drawer-synthesize-prompt">
+                      <p className="text-[13px] text-[var(--ink)] mb-3">
+                        Run synthesis to produce the executive read-out.
+                      </p>
+                      <Button
+                        onClick={onSynthesize}
+                        disabled={synthesizing}
+                        data-testid="analyze-drawer-synthesize-btn"
+                      >
+                        {synthesizing
+                          ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Synthesizing…</>
+                          : "Run synthesis"}
+                      </Button>
+                    </section>
+                  )}
+                  {analysis.headline && (
+                    <section data-testid="analyze-drawer-headline">
+                      <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5">
+                        Bottom line
+                      </p>
+                      <p className="akki-serif text-[17px] text-[var(--ink)] leading-snug">
+                        {analysis.headline}
+                      </p>
+                    </section>
+                  )}
+                  {(analysis.observations || []).slice(0, 3).map((o) => (
+                    <section
+                      key={o.id}
+                      className="border border-[var(--rule)] rounded-sm p-3 bg-white"
+                      data-testid={`analyze-drawer-bottom-line-obs-${o.id}`}
+                    >
+                      <p className="text-[13.5px] text-[var(--ink)] font-semibold mb-1">{o.title}</p>
+                      <p className="text-[12.5px] text-[var(--ink)] leading-relaxed">{o.detail}</p>
+                      {(o.citations || []).length > 0 && (
+                        <p className="text-[10px] uppercase tracking-[0.12em] font-mono text-[var(--muted)] mt-1.5">
+                          Citation: {o.citations[0]?.cell_range || ""}
+                        </p>
+                      )}
+                    </section>
+                  ))}
                   <section>
                     <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5">
                       Your notes
@@ -291,6 +363,87 @@ export default function AnalyzeDrawer({ aid, onClose }) {
                       </Button>
                     </div>
                   </section>
+                </TabsContent>
+
+                {/* What changed — signal-kind observations */}
+                <TabsContent
+                  value="what-changed"
+                  className="flex-1 overflow-y-auto px-6 py-5 space-y-3"
+                  data-testid="analyze-drawer-what-changed"
+                >
+                  {(obsByTab.what_changed || []).length === 0 ? (
+                    <p className="text-[12px] italic text-[var(--muted)]">
+                      No signals narrated yet. Run synthesis on the Bottom Line tab.
+                    </p>
+                  ) : (obsByTab.what_changed || []).map((o) => (
+                    <section
+                      key={o.id}
+                      className="border border-[var(--rule)] rounded-sm p-3 bg-white"
+                      data-testid={`analyze-drawer-what-changed-obs-${o.id}`}
+                    >
+                      <p className="text-[13.5px] text-[var(--ink)] font-semibold mb-1">{o.title}</p>
+                      <p className="text-[12.5px] text-[var(--ink)] leading-relaxed">{o.detail}</p>
+                      {(o.citations || []).map((c, i) => (
+                        <span key={i} className="inline-block text-[10px] uppercase tracking-[0.12em] font-mono text-[var(--muted)] mt-1.5 mr-2">
+                          📎 {c.cell_range}
+                        </span>
+                      ))}
+                    </section>
+                  ))}
+                </TabsContent>
+
+                {/* What's likely next — forecast + monte carlo */}
+                <TabsContent
+                  value="whats-likely-next"
+                  className="flex-1 overflow-y-auto px-6 py-5 space-y-3"
+                  data-testid="analyze-drawer-whats-likely-next"
+                >
+                  {(obsByTab.whats_likely_next || []).length === 0 ? (
+                    <p className="text-[12px] italic text-[var(--muted)]">
+                      No forecast narration yet. Run synthesis on the Bottom Line tab.
+                    </p>
+                  ) : (obsByTab.whats_likely_next || []).map((o) => (
+                    <section
+                      key={o.id}
+                      className="border border-[var(--rule)] rounded-sm p-3 bg-white"
+                      data-testid={`analyze-drawer-whats-likely-next-obs-${o.id}`}
+                    >
+                      <p className="text-[13.5px] text-[var(--ink)] font-semibold mb-1">{o.title}</p>
+                      <p className="text-[12.5px] text-[var(--ink)] leading-relaxed">{o.detail}</p>
+                      {(o.citations || []).map((c, i) => (
+                        <span key={i} className="inline-block text-[10px] uppercase tracking-[0.12em] font-mono text-[var(--muted)] mt-1.5 mr-2">
+                          📎 {c.cell_range}
+                        </span>
+                      ))}
+                    </section>
+                  ))}
+                </TabsContent>
+
+                {/* What's odd — anomaly narration */}
+                <TabsContent
+                  value="whats-odd"
+                  className="flex-1 overflow-y-auto px-6 py-5 space-y-3"
+                  data-testid="analyze-drawer-whats-odd"
+                >
+                  {(obsByTab.whats_odd || []).length === 0 ? (
+                    <p className="text-[12px] italic text-[var(--muted)]">
+                      No anomaly narration yet. Run synthesis on the Bottom Line tab.
+                    </p>
+                  ) : (obsByTab.whats_odd || []).map((o) => (
+                    <section
+                      key={o.id}
+                      className="border border-[var(--rule)] rounded-sm p-3 bg-white"
+                      data-testid={`analyze-drawer-whats-odd-obs-${o.id}`}
+                    >
+                      <p className="text-[13.5px] text-[var(--ink)] font-semibold mb-1">{o.title}</p>
+                      <p className="text-[12.5px] text-[var(--ink)] leading-relaxed">{o.detail}</p>
+                      {(o.citations || []).map((c, i) => (
+                        <span key={i} className="inline-block text-[10px] uppercase tracking-[0.12em] font-mono text-[var(--muted)] mt-1.5 mr-2">
+                          📎 {c.cell_range}
+                        </span>
+                      ))}
+                    </section>
+                  ))}
                 </TabsContent>
 
                 {/* Sources — per-file stage timing record */}

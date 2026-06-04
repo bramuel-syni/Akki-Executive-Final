@@ -102,6 +102,12 @@ class Analysis(BaseModel):
     # Used as narration context by Solva v2 in Phase 3.
     objective: str = Field(default="", max_length=4000)
 
+    # Track A Phase 3 (2026-06-04) — Solva narration output. Populated
+    # by POST /v2/analyses/{aid}/synthesize. `cache_key` enables
+    # idempotency on re-call.
+    headline: str = Field(default="", max_length=400)
+    narration: Optional[Dict[str, Any]] = Field(default=None)
+
     sources: List[AnalysisSource] = Field(default_factory=list)
     observations: List[AnalysisObservation] = Field(default_factory=list)
     notes: List[AnalysisNote] = Field(default_factory=list)
