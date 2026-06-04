@@ -54,7 +54,7 @@ export default function ShareDocumentModal({
     setSending(true);
     try {
       await api.post(`/contexts/${contextId}/documents/${docId}/share`, {
-        recipients: list,
+        recipient_emails: list,
         message: message.trim() || null,
       });
       toast.success(`Shared with ${list.length} recipient${list.length === 1 ? "" : "s"}.`);

@@ -87,8 +87,16 @@ async def record_view(
 # Share recording (internal + external)
 # -----------------------------------------------------------------------------
 class DocumentShareIn(BaseModel):
-    to_email: EmailStr
-    to_name: Optional[str] = Field(default=None, max_length=120)
+    # Track B Phase B5 G7 (2026-06-04) — schema swap from singular
+    # `to_email: EmailStr` to multi-recipient `recipient_emails:
+    # List[EmailStr]`. The FE has always sent a list (`recipients:`
+    # → now `recipient_emails:`); the BE was authored singular so
+    # every submit returned 422 "Field required". Mirrors the
+    # canonical Q4Y share contract at `questions.py:351-356` and
+    # the engagement read panel which already renders
+    # `s.recipient_emails || []` as an array. `email_service.
+    # send_email(to=List[str], …)` already accepts a list.
+    recipient_emails: List[EmailStr] = Field(..., min_length=1, max_length=10)
     message: Optional[str] = Field(default=None, max_length=2000)
 
 
@@ -109,6 +117,16 @@ async def share_document(
         raise HTTPException(status_code=404, detail="Document not found")
 
     account = ctx["account"]
+    # G7 (2026-06-04) — multi-recipient storage. Store BOTH:
+    #   • `recipient_emails: List[str]` (new canonical shape; engagement
+    #     read surfaces this for FE rendering).
+    #   • `shared_with_email: str` (= recipient_emails[0]; backwards-
+    #     compat with prior singular-shape engagement consumers).
+    # Mongo is schemaless so prior rows without `recipient_emails`
+    # naturally surface as missing → engagement read falls back to
+    # the singular `shared_with_email` field.
+    recipient_emails = [str(e) for e in body.recipient_emails]
+    primary_email = recipient_emails[0]
     record = {
         "id": str(uuid.uuid4()),
         "doc_id": doc_id,
@@ -116,18 +134,18 @@ async def share_document(
         "shared_by_account_id": account["id"],
         "shared_by_name": account.get("name") or account["email"],
         "shared_by_email": account["email"],
-        "shared_with_email": body.to_email,
-        "shared_with_name": body.to_name or body.to_email.split("@")[0],
+        "recipient_emails": recipient_emails,
+        "shared_with_email": primary_email,
+        "shared_with_name": primary_email.split("@")[0],
         "message": (body.message or "").strip()[:2000],
         "created_at": _iso(_now()),
     }
     await db.document_shares.insert_one(record)
     record.pop("_id", None)
 
-    # Real send via Resend. The recipient gets a brief note + a "View
-    # in AKKI" CTA. The document_views tracking will pick up reads when
-    # they actually open the doc. Failures are logged but the share
-    # intent record still persists.
+    # Real send via Resend / SendGrid. `send_email(to=List[str], …)`
+    # already accepts a list — fan-out is provider-native. Failures
+    # are logged but the share intent record still persists.
     try:
         from email_service import send_email
         view_url = f"{os.environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/documents/{doc_id}"
@@ -145,7 +163,7 @@ async def share_document(
             + "</div>"
         )
         send_result = await send_email(
-            to=body.to_email, subject=f"{sender_label} shared: {doc.get('name')}",
+            to=recipient_emails, subject=f"{sender_label} shared: {doc.get('name')}",
             html=html,
             text=f"{sender_label} shared a document with you via AKKI: {doc.get('name')}\n\n{record['message'] or ''}\n\nOpen: {view_url}",
         )
@@ -160,7 +178,7 @@ async def share_document(
 
     await write_audit(
         context_id, account["id"], "document.shared", "document", doc_id,
-        {"to_email": body.to_email, "doc_name": doc.get("name")},
+        {"recipient_emails": recipient_emails, "doc_name": doc.get("name")},
     )
     return record
 
@@ -221,10 +239,21 @@ async def get_engagement(
     ).sort("created_at", -1)
     shares: List[Dict[str, Any]] = []
     async for s in shares_cursor:
+        # Track B Phase B5 G7 (2026-06-04) — surface `recipient_emails`
+        # as the canonical array shape (FE renders `s.recipient_emails
+        # || []`). Legacy rows authored under the singular schema lack
+        # this field, so fall back to wrapping `shared_with_email` in
+        # a one-element list for engagement-read consumers.
+        legacy_singular = s.get("shared_with_email")
+        recipient_emails = (
+            s.get("recipient_emails")
+            or ([legacy_singular] if legacy_singular else [])
+        )
         shares.append({
             "id": s.get("id"),
+            "recipient_emails": recipient_emails,
             "shared_with_name": s.get("shared_with_name"),
-            "shared_with_email": s.get("shared_with_email"),
+            "shared_with_email": legacy_singular,
             "shared_by_name": s.get("shared_by_name"),
             "message": s.get("message", ""),
             "created_at": s.get("created_at"),
