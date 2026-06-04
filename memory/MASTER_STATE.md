@@ -34,7 +34,7 @@ Verbatim, dated:
 
 **Reconciliation note (2026-06-03):** The previous Section 3 was a prior agent's 8-cluster aggregation. This section is rebuilt verbatim against the three QA docs the user uploaded (`Onboarding Journey QA`, `Task Manager QA`, `Google Login + Doc Reader + Calendar + Open Questions QA`, all dated 2nd June 2026). The audit memo at `sprints/MASTER_STATE_RECONCILIATION_2026-06-03.md` documents the divergences uncovered.
 
-**Total items across 3 QA docs: 37. ✅ 26 · 🟡 0 · ❌ 9 · 🚧 2 · ❔ 0.** (Plus Bug #30 also ✅ now.)
+**Total items across 3 QA docs: 37. ✅ 26 · 🟡 1 · ❌ 8 · 🚧 2 · ❔ 0.** (Plus Bug #30 ✅.)
 
 Status legend:
 - ✅ SHIPPED — code change verified; tester journey-completion passed
@@ -87,7 +87,7 @@ Status legend:
 | G8 | fig 29, fig 30 | Upload button consistency | "Why does the Upload document button in figure 29 behaves differently from other upload buttons in the platform?" | "I think all upload document buttons should follow the process shown in figure 30" | ✅ SHIPPED | Cleanup Task D — Upload Document button consolidation. |
 | G9 | fig 31, fig 25.2 | Pulse signals | "Why are there no signals in the pulse page shown in figure 31 despite generating signals in page shown in figure 25.2?" | (signals generated in doc reader should propagate to Pulse) | ✅ SHIPPED | P1-A — doc-extracted signals propagate to Pulse. |
 | G10 | fig 32 | Calendar text leakage | "Why do we have the text circled in figure 32?" | "I think the text should be removed" | ❌ OPEN | Track B Phase B5. Calendar edit modal `SELECTED — COMMITS ON SAVE CHANGES` placeholder. |
-| G11 | fig 25.1, fig 33 | Doc-question surfacing | "Where can a user access the questions surfaced from a document as shown in figure 25.1?" | "I think the user can access the questions by clicking on Open Question card shown in figure 33." | ❌ OPEN | Track B Phase B4. Card surface exists but click-through-to-Q4Y wiring + 0-count fix not in. |
+| G11 | fig 25.1, fig 33 | Doc-question surfacing | "Where can a user access the questions surfaced from a document as shown in figure 25.1?" | "I think the user can access the questions by clicking on Open Question card shown in figure 33." | 🟡 SHIPPED tester-pending | Track B Phase B4 shipped 2026-06-04T06:25:00Z. `services/documents/intelligence_service.promote_intelligence_questions_to_q4y` mirror of the signals promoter — stable id `q4y:from_intel:{doc_id}:{idx}`, sets `source_doc_id` for G13 drawer, `cycle_id=""` sentinel, `asker_role` derived. Eager call site at `routers/documents.py:1135` (post-extraction), lazy at `routers/documents.py:1018` (Brief gate back-fill). Tightening 1: orphan close-out — when re-extraction shrinks the question list, leftover idx rows flip to `status="closed"` with history `kind=closed, note=superseded_by_reextraction` (NOT deleted; audit preserved; idempotent). Tightening 2: no-double-fire pinned by stable-id upsert (test 4 asserts). No frontend changes — existing CompanyHome attention card route + Q4Y page already wired; previously surfaced 0 because no insert path existed. |
 | G12 | fig 34 | Your Questions page | "When a user clicks an Open Question card, they are redirected to the Your Questions page in Figure 34." | "The Your Questions page should displays all generated questions as individual cards. The questions cards should contain question and a status badge (Open or Answered). Users should be able to filter by status (All, Open, Answered) and sort by Most Recent or Oldest." | ✅ SHIPPED | Q4Y — filter-by-status, sort, status-badge all in. |
 | G13 | — | Question side drawer | "When a user clicks on a question card, a side drawer opens displaying: Full question, the Status badge and the related document as an attachment." | (drawer must show all three) | ✅ SHIPPED | Track B Phase B3 — related-doc card surfaces both `source_doc_id` and (post-link) `response_doc_id`. Tester PASS Journey 21-24, 2026-06-04. |
 | G14 | — | Drawer CTAs | "The CTA buttons at the bottom left of the side drawer are: [Use in Solva] [Use in Chat] [Share] [Mark as Answered]" | (four CTAs in this exact order) | ✅ SHIPPED | Track B Phase B3 — Share CTA added; all 4 CTAs present. Tester PASS. |
@@ -145,7 +145,7 @@ Status legend:
 - Phase B1 (small mechanical onboarding + signin): **O4** ✅ + **O6** ✅ + **G1** ✅ (Fig 20 — `/sign-in` → `/signin` × 4 buttons) + **G2 Fig 22 modal** ✅ (SessionTimeoutGuard handler gated on `account`); **O7** ✅ Fig 7. Phase status: ✅ SHIPPED — tester PASS Journeys 4-v2, 6, 7, 8, 9 (5/5 incl. regression), 2026-06-04. Memos: `sprints/TRACK_B_PHASE1_FIG7_V2_ROOT_CAUSE_FIX.md`, `sprints/TRACK_B_PHASE1B_O4_O6_FIG20_FIG22.md`.
 - Phase B2 (Task Manager lifecycle): TM1 (filter badges) + TM2 (Commission button + full Closure flow) + TM5 (View more → follow-up emails page) → ✅ SHIPPED — tester PASS Journeys 14-17 (8/8 incl. cross-tenant), 2026-06-04. Commission/Close endpoints (idempotent, audit-logged); filter-tab live count badges via `/api/tasks/counts`; FollowUpDraftsCard "View more" → `/app/cycle/drafts`. Memo: `sprints/TRACK_A_PHASE2_AND_TRACK_B_PHASE2_combined.md`.
 - Phase B3 (Questions feature wiring): G13 (related-doc-as-attachment) + G14 (Share CTA) + G17 (Share modal full spec) + G19 (response association) + G20 (Open-until-confirmed) + G21 (reopening flow) + G22 (response history) + G23 (empty state + Go to Document CTA) → ✅ SHIPPED 2026-06-04 — tester PASS Journeys 21-24 (4/4). Memo: `sprints/TRACK_A_PHASE3_AND_TRACK_B_PHASE3_combined.md`.
-- Phase B4 (cross-feature surfacing): G11 (Open Question card click → Your Questions; doc-extracted Q surface) → ❌ NOT STARTED
+- Phase B4 (cross-feature surfacing): G11 (Open Question card click → Your Questions; doc-extracted Q surface) → 🟡 SHIPPED tester-pending 2026-06-04T06:25:00Z. `promote_intelligence_questions_to_q4y` mirror of the signals promoter; eager + lazy call sites; orphan close-out on re-extraction (audit-preserved). 4/4 backend lockdown tests PASS. No FE change (existing wiring; the gap was zero-write to `cycle_questions`). Memo: `sprints/TRACK_B_PHASE_B4_G11_DOC_QUESTION_SURFACING.md`.
 - Phase B5 (Document workflow + Calendar polish): G6 (Notes autosave full spec) + G7 (Send Share Field-required error) + G10 (Calendar text in fig 32 to be removed) → ❌ NOT STARTED
 
 ---
@@ -162,16 +162,18 @@ Status legend:
 
 ## Section 6 — Active Phase
 
-**None active.** Track A Phase 3 ✅ COMPLETE tester-verified 2026-06-04 (4/4 PASS R3v5). All seven shipped phases (Track A Phase 1+2+3, Track B B1 incl. B1b + B2 + B3) tester-PASS. Paused pending user's separate document-review request scoping — next phase brief to follow.
+Track B Phase B4 G11 (doc-extracted question → Q4Y promotion) shipped 2026-06-04T06:25:00Z. Awaiting tester journey-completion run. Track A Phase 3 ✅ COMPLETE; all other shipped phases tester-PASS.
 
 ---
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T06:05:00Z (Track A Phase 3 flipped 🟡 PARTIAL → ✅ COMPLETE per tester 4/4 verdict on R3v5; Bug #30 also flipped to ✅).
-- **Agent:** track-a-phase3-r3v5-tester-verify-flip.
-- **Mode:** Status flip only. No code change. Tester confirmed (a) Fix A resolves J19 happy path with real Claude round-trip + non-null `forecast_meta`, (b) Fix B safety-net fires on J20 noisy-dates path, (c) EMPTY-sentinel fix from R3v4 still holding clean across both paths, (d) curl sanity J19-API + J20-API identical.
-- **Tester evidence (verbatim quoted in Section 4 Track A Phase 3):** J19 `picker_reason: "non_null_count=16, value_spread=110.00"`; J19 headline "Sales averaged 193 per month across sixteen periods... no clear linear trend emerging"; J20 `partial_narration_missing_whats_likely_next: true` + `partial_narration_missing_forecast: true` both fired.
-- **Combined memo:** `sprints/TRACK_A_PHASE3_R3V5_PARSER_AND_SAFETY_NET.md` (close-out section updated 2026-06-04 with 4/4 PASS verdict).
-- **Lockdown intact:** 59/59 PASS (10 prompt-fix functions × 14 cases + 13 narration + 4 v1 byte-identical + 32 workbook-analyze). v1 byte-identical guard still green. Voice-lint clean.
-- **State:** Paused on user's separate document-review request. Track B B4 + Track A Phase 4 NOT auto-started per instruction.
+- **Written:** 2026-06-04T06:25:00Z (Track B Phase B4 G11 — `services/documents/intelligence_service.promote_intelligence_questions_to_q4y` mirror of the signals promoter; eager + lazy call sites in `routers/documents.py`; orphan close-out on re-extraction; 4 lockdown tests).
+- **Agent:** track-b-phase-b4-g11-q4y-promotion.
+- **Mode:** Persistence + provenance fix per orchestrator-approved Pre-Read. Two-bug root cause: (1) doc-extracted `open_questions` were never written to `cycle_questions` (Open Questions attention card stayed at 0); (2) even if written, `source_doc_id` was never set so G13 drawer attachment surface would have rendered blank. Both closed.
+- **Tightening 1 (orphan close-out):** orchestrator-requested expansion to handle the M→N shrink case. Implemented inside the promoter — leftover idx rows flip to `status="closed"` with history `kind=closed, note="superseded_by_reextraction"`. Rows preserved for audit (not deleted). Idempotent (re-running won't append duplicate closed entries). Test 2 sub-path (b) + (c) lockdown.
+- **Tightening 2 (no-double-fire):** stable-id upsert (`q4y:from_intel:{doc_id}:{idx}`) guarantees eager + lazy promotion firing against the same doc never doubles the count. Test 4 asserts `open_count == 3` after two consecutive promotions with identical input.
+- **Combined memo:** `sprints/TRACK_B_PHASE_B4_G11_DOC_QUESTION_SURFACING.md`
+- **Files touched:** `M backend/services/documents/intelligence_service.py` (+154 LOC: new promoter + orphan close-out), `M backend/routers/documents.py` (+58 LOC: eager + lazy call sites), `?? backend/tests/test_track_b_phase_b4_g11_q4y_promotion.py` (4 lockdown tests). No frontend changes.
+- **Lockdown:** 4/4 PASS in `test_track_b_phase_b4_g11_q4y_promotion.py`. Combined regression sweep — B4 + B3 (Q4Y) + Track A Phase 3 + v1 byte-identical + workbook-analyze + Q4Y mark-answered + Phase I.5 open-questions: **91/91 PASS in 20.90s**. Voice-lint clean. Lint: only pre-existing rot in `documents.py` (parked per "No Side Quests"); zero new errors introduced.
+- **Track B Phase B4 stays 🟡** until tester journey-completion run.

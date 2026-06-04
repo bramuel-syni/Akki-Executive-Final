@@ -149,6 +149,165 @@ async def promote_intelligence_signals_to_pulse(
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Track B Phase B4 G11 (2026-06-04) — Q4Y promotion mirror.
+#
+# The user-reported gap (MASTER_STATE.md G11): doc-extracted
+# `open_questions` were cached on `db.document_intelligence` only and
+# never reached `cycle_questions`. Net effect: the CompanyHome
+# "Open questions" attention card showed 0 even when docs contained
+# extracted questions, and Q4Y had no row to drill into.
+#
+# This helper idempotently mirrors `open_questions[]` into
+# `db.cycle_questions` with stable id `q4y:from_intel:{doc_id}:{idx}`
+# so two callers (eager extraction-time + lazy Brief-gate back-fill)
+# write the same row exactly once. Mirrors `promote_intelligence_
+# signals_to_pulse` shape so future Track B promoters land in the
+# same module.
+#
+# Tightening 1 (orchestrator R3v5+1, 2026-06-04) — orphan close-out.
+# When a doc is re-extracted and the new open_questions list is
+# SHORTER than the previous one (M → N, N < M), the leftover
+# `q4y:from_intel:{doc_id}:{N..M-1}` rows are flipped to
+# `status="closed"` with a history entry recording the reason. Rows
+# are NOT deleted — preserving the audit trail.
+#
+# Schema fields written:
+#   id (stable), context_id, cycle_id=""  (sentinel — doc-extracted
+#   questions are cycle-less; matches admin_qa_hooks pattern),
+#   text, asked_by_account_id, asker_role, asked_at,
+#   assignee_account_id, source_doc_id (provenance for G13 drawer),
+#   status, history[], promoted_from="document_intelligence".
+# ─────────────────────────────────────────────────────────────────────
+async def promote_intelligence_questions_to_q4y(
+    db,
+    *,
+    doc: Dict[str, Any],
+    context_id: str,
+    account_id: str,
+    open_questions: List[str],
+) -> List[str]:
+    """Idempotently promote `open_questions` into `db.cycle_questions`.
+
+    Returns the list of stable q4y ids written/refreshed. Never
+    duplicates rows — same `(doc_id, idx)` always lands on the same
+    `q4y:from_intel:{doc_id}:{idx}` row. When the input list shrinks
+    relative to a prior run, the leftover (orphan) rows are closed
+    (not deleted) with a `superseded_by_reextraction` history entry.
+
+    No-op when `open_questions` is empty AND no prior rows exist for
+    `doc_id`. If prior rows DO exist and the new input is empty,
+    every prior row is closed (the doc no longer surfaces any
+    questions).
+    """
+    doc_id = doc.get("id")
+    if not doc_id or not context_id:
+        return []
+
+    # Derive the executive's role once per call (matches the
+    # questions.raise_question path).
+    from services.open_questions.asker_role_map import derive_asker_role
+    asker_role = await derive_asker_role(account_id, context_id)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    # Cap at 8 (mirrors the signals cap and the intel envelope's
+    # own `[:4]` truncation — but the intel envelope can change so
+    # we cap defensively).
+    items = [
+        q.strip() for q in (open_questions or [])
+        if isinstance(q, str) and q.strip()
+    ][:8]
+
+    promoted: List[str] = []
+    for idx, q_text in enumerate(items):
+        q_id = f"q4y:from_intel:{doc_id}:{idx}"
+        q_doc = {
+            "id":                   q_id,
+            "context_id":           context_id,
+            "cycle_id":             "",
+            "agenda_item_id":       None,
+            "text":                 q_text[:2000],
+            "asked_by_account_id":  account_id,
+            "asker_role":           asker_role,
+            "asked_at":             now_iso,
+            "assignee_account_id":  account_id,
+            "source_doc_id":        doc_id,
+            "status":               "open",
+            "promoted_from":        "document_intelligence",
+        }
+        # Idempotency contract:
+        #   • `$set` rewrites text + provenance every run (refined
+        #     extractions update the live row).
+        #   • `$setOnInsert` pins `asked_at` + initial `history[]` so
+        #     re-runs don't reset the original surface timestamp.
+        #   • Status is NEVER blindly reset to "open" — a question
+        #     marked answered by the user must not regress on a
+        #     re-extraction. We only set status=open on insert.
+        await db.cycle_questions.update_one(
+            {"id": q_id},
+            {
+                "$set": {
+                    "context_id":          q_doc["context_id"],
+                    "cycle_id":            q_doc["cycle_id"],
+                    "agenda_item_id":      q_doc["agenda_item_id"],
+                    "text":                q_doc["text"],
+                    "asked_by_account_id": q_doc["asked_by_account_id"],
+                    "asker_role":          q_doc["asker_role"],
+                    "assignee_account_id": q_doc["assignee_account_id"],
+                    "source_doc_id":       q_doc["source_doc_id"],
+                    "promoted_from":       q_doc["promoted_from"],
+                },
+                "$setOnInsert": {
+                    "asked_at": q_doc["asked_at"],
+                    "status":   q_doc["status"],
+                    "history":  [{
+                        "ts":       q_doc["asked_at"],
+                        "kind":     "raised_from_doc",
+                        "actor_id": account_id,
+                        "note":     f"Surfaced from document {doc.get('name') or doc_id}.",
+                    }],
+                },
+            },
+            upsert=True,
+        )
+        promoted.append(q_id)
+
+    # Tightening 1 — orphan close-out. After the upsert pass, any
+    # prior `q4y:from_intel:{doc_id}:*` row whose idx is >= len(items)
+    # is closed (not deleted). Prefix-match via $regex (anchored).
+    # The full id format is `q4y:from_intel:{doc_id}:{idx}` so
+    # `^q4y:from_intel:{doc_id}:` is the unambiguous prefix.
+    prefix = f"q4y:from_intel:{doc_id}:"
+    cur = db.cycle_questions.find(
+        {"id": {"$regex": f"^{re.escape(prefix)}"}},
+        {"_id": 0, "id": 1, "status": 1, "history": 1},
+    )
+    async for row in cur:
+        suffix = row["id"][len(prefix):]
+        try:
+            row_idx = int(suffix)
+        except (ValueError, TypeError):
+            continue
+        if row_idx < len(items):
+            # Active row — already handled by the upsert above.
+            continue
+        if row.get("status") == "closed":
+            # Already closed by a prior re-extraction — idempotent.
+            continue
+        history = list(row.get("history") or [])
+        history.append({
+            "ts":     now_iso,
+            "kind":   "closed",
+            "actor_id": account_id,
+            "note":   "superseded_by_reextraction",
+        })
+        await db.cycle_questions.update_one(
+            {"id": row["id"]},
+            {"$set": {"status": "closed", "history": history}},
+        )
+    return promoted
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Helpers — heuristic signals (no LLM, deterministic)
 # ─────────────────────────────────────────────────────────────────────
 def _doc_hash(doc: Dict[str, Any]) -> str:

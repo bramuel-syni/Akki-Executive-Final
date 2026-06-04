@@ -1015,6 +1015,36 @@ async def generate_briefing_from_document(
             )
             if promoted:
                 related_signals = [{"id": sid} for sid in promoted]
+            # Track B Phase B4 G11 (2026-06-04) — Lazy Q4Y back-fill.
+            # When the eager path didn't fire (intel rows that pre-date
+            # the eager hook), promote any cached `open_questions` to
+            # `cycle_questions` so the Brief click also fills Q4Y.
+            # Stable-id upsert keeps this a no-op for intel already
+            # promoted eagerly.
+            intel_questions = await db.document_intelligence.find_one(
+                {"doc_id": doc_id, "context_id": context_id},
+                {"_id": 0, "open_questions": 1},
+            )
+            iqs = (intel_questions or {}).get("open_questions") or []
+            if iqs:
+                try:
+                    from services.documents.intelligence_service import (
+                        promote_intelligence_questions_to_q4y,
+                    )
+                    await promote_intelligence_questions_to_q4y(
+                        db,
+                        doc=doc,
+                        context_id=context_id,
+                        account_id=ctx["account"]["id"],
+                        open_questions=iqs,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    import logging as _log
+                    _log.getLogger("documents.intelligence").warning(
+                        "lazy promote_intelligence_questions_to_q4y "
+                        "failed for doc=%s: %s",
+                        doc_id, e,
+                    )
     if not related_signals:
         raise HTTPException(
             status_code=400,
@@ -1121,6 +1151,28 @@ async def regenerate_document_intelligence(
                 import logging as _log
                 _log.getLogger("documents.intelligence").warning(
                     "promote_intelligence_signals_to_pulse failed for doc=%s: %s",
+                    doc_id, e,
+                )
+            # Track B Phase B4 G11 (2026-06-04) — Eager Q4Y promotion.
+            # Mirrors the signals promoter above so the CompanyHome
+            # "Open questions" attention card reflects doc-extracted
+            # questions in real time (no Brief click required).
+            # Idempotent via stable id `q4y:from_intel:{doc_id}:{idx}`.
+            try:
+                from services.documents.intelligence_service import (
+                    promote_intelligence_questions_to_q4y,
+                )
+                await promote_intelligence_questions_to_q4y(
+                    db,
+                    doc=doc,
+                    context_id=context_id,
+                    account_id=account_id,
+                    open_questions=envelope.get("open_questions") or [],
+                )
+            except Exception as e:  # noqa: BLE001
+                import logging as _log
+                _log.getLogger("documents.intelligence").warning(
+                    "promote_intelligence_questions_to_q4y failed for doc=%s: %s",
                     doc_id, e,
                 )
         except Exception as e:  # noqa: BLE001
