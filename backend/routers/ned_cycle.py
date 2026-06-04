@@ -432,7 +432,10 @@ async def draft_followup(
     return doc
 
 
-@router.post("/ned/meetings/{meeting_id}/followups/{fid}/send")
+@router.post(
+    "/ned/meetings/{meeting_id}/followups/{fid}/send",
+    operation_id="ned_cycle_send_followup",
+)
 async def send_followup(
     meeting_id: str, fid: str,
     account: Dict[str, Any] = Depends(get_current_account),

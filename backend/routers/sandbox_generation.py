@@ -60,7 +60,7 @@ async def post_session(payload: FormPayload, request: Request, background: Backg
     return {"session_id": sid, "status": "generating"}
 
 
-@router.get("/sessions/{sid}")
+@router.get("/sessions/{sid}", operation_id="sandbox_gen_get_session")
 async def get_session(sid: str) -> Dict[str, Any]:
     from core import db
     doc = await db.sandbox_sessions.find_one({"id": sid})

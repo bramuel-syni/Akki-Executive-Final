@@ -849,6 +849,10 @@ async def synthesize_v2_endpoint(
                 )
                 resolver.resolve_many(fc.citations)
                 wba.forecasts.append(fc)
+                # Track A Phase 4 (2026-06-04) — pass the engine's R²
+                # back through forecast_meta so narrate_analysis can
+                # fire the low-signal flag when the fit is noisy.
+                forecast_meta_for_prompt["r2"] = float(fc.r2)
             except (ValueError, CitationUnverifiable) as exc:
                 # Observability — preserve graceful-degradation
                 # behaviour but make the swallowed exception visible
@@ -942,9 +946,43 @@ async def synthesize_v2_endpoint(
                 "created_at":         datetime.now(timezone.utc).isoformat(),
             })
         update_set["observations"] = lifted
-    await db.analyses.update_one(
-        {"id": aid, "account_id": current["id"]}, {"$set": update_set},
-    )
+
+    # Track A Phase 4 (2026-06-04) — append-only `runs[]` history.
+    # Each synthesize call appends a new run UNLESS the latest run's
+    # cache_key matches (idempotent re-synthesize on unchanged data).
+    # Top-level `narration` is retained as a BC mirror for FE
+    # consumers; the latest entry of `runs` is the source of truth.
+    # `narration` mirror removal scheduled for Phase 5 — see
+    # MASTER_STATE Section 4.
+    existing_runs: List[Dict[str, Any]] = row.get("runs") or []
+    latest_cache_key = (existing_runs[-1].get("cache_key") if existing_runs else None)
+    new_cache_key = narration.get("cache_key")
+    if not existing_runs or new_cache_key != latest_cache_key:
+        new_run = {
+            "run_id":                  "run-" + uuid.uuid4().hex[:12],
+            "created_at":              datetime.now(timezone.utc).isoformat(),
+            "triggered_by_account_id": current["id"],
+            "headline":                narration.get("headline", ""),
+            "observations":            narration.get("observations") or [],
+            "citations":               narration.get("citations") or [],
+            "forecast_meta":           narration.get("forecast_meta"),
+            "cache_key":               new_cache_key,
+            "refused":                 narration.get("refused", False),
+            "source_files":            row.get("source_files") or [],
+        }
+        # Mirror per-tab partial flags onto the run snapshot.
+        for k, v in narration.items():
+            if k.startswith("partial_narration_missing_"):
+                new_run[k] = v
+        await db.analyses.update_one(
+            {"id": aid, "account_id": current["id"]},
+            {"$set": update_set, "$push": {"runs": new_run}},
+        )
+    else:
+        # Same content hash → no new run; just refresh the BC mirror.
+        await db.analyses.update_one(
+            {"id": aid, "account_id": current["id"]}, {"$set": update_set},
+        )
     return narration
 
 
@@ -1013,7 +1051,7 @@ async def list_analyses_v2(
             "objective": r.get("objective", ""),
             "source_count": len(r.get("sources") or []),
             "observation_count": len(r.get("observations") or []),
-            "note_count": len(r.get("notes") or []),
+            "note_count": len(r.get("notes_history") or r.get("notes") or []),
             "created_at": r.get("created_at"),
             "updated_at": r.get("updated_at"),
         })
@@ -1056,13 +1094,30 @@ async def post_analysis_note(
     current: Dict[str, Any] = Depends(get_current_account),
 ):
     """Append a note to the Analysis. Auto-saved; FE typically
-    sends one note per save-debounce window. Tenant-scoped."""
+    sends one note per save-debounce window. Tenant-scoped.
+
+    Track A Phase 4 (2026-06-04) — notes are append-only history.
+    Idempotency: if the most-recent note's body equals the new
+    body, no new entry is appended (autosave debounce safe — a
+    double-fire on identical content is a no-op). On every accepted
+    append, top-level `notes` + `notes_updated_at` mirror the
+    latest entry for backwards-compat with consumers reading the
+    simple shape. `notes` mirror removal scheduled for Phase 5 —
+    see MASTER_STATE Section 4.
+    """
     row = await db.analyses.find_one(
         {"id": aid, "account_id": current["id"]},
         {"_id": 0},
     )
     if not row:
         raise HTTPException(404, "analysis_not_found")
+
+    notes_history: List[Dict[str, Any]] = row.get("notes_history") or []
+    if notes_history and notes_history[-1].get("body") == body.body:
+        # Idempotent no-op — return the existing tail entry so the FE
+        # has a stable id to render against.
+        return notes_history[-1]
+
     note = {
         "id": "note-" + uuid.uuid4().hex[:12],
         "body": body.body,
@@ -1072,8 +1127,12 @@ async def post_analysis_note(
     await db.analyses.update_one(
         {"id": aid, "account_id": current["id"]},
         {
-            "$push": {"notes": note},
-            "$set": {"updated_at": note["created_at"]},
+            "$push": {"notes_history": note},
+            "$set": {
+                "notes":            body.body,           # BC mirror
+                "notes_updated_at": note["created_at"],  # BC mirror
+                "updated_at":       note["created_at"],
+            },
         },
     )
     return note

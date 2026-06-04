@@ -874,7 +874,7 @@ async def list_session_attachments(
 _ = (hashlib, json)  # silence imports kept for future audit fingerprints
 
 
-@router.get("/sessions")
+@router.get("/sessions", operation_id="solva_phase_d_list_sessions")
 async def list_sessions(
     status: Optional[str] = None,
     limit: int = Query(default=50, ge=1, le=200),
@@ -894,7 +894,7 @@ async def list_sessions(
     return {"items": rows, "count": len(rows)}
 
 
-@router.get("/sessions/{session_id}")
+@router.get("/sessions/{session_id}", operation_id="solva_phase_d_get_session")
 async def get_session(
     session_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),

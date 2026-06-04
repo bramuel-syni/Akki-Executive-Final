@@ -21,6 +21,14 @@ import numpy as np
 from .schema import ForecastRun, NarrationBlock, WorkbookCitation
 
 
+# Track A Phase 4 (2026-06-04) — tuning constants for autopicker
+# density gate + low-R² safety-net flag. Named so they're greppable
+# and the synthesize endpoint can import the R² threshold.
+_AUTOPICK_MIN_NON_NULL_RATIO = 0.30   # column needs ≥30% non-null density
+_AUTOPICK_MIN_NON_NULL_COUNT = 6      # absolute floor for fit-ability
+_FORECAST_LOW_R2_THRESHOLD = 0.30     # below this → low_signal flag fires
+
+
 def _to_ordinal(v: Any) -> Optional[float]:
     if isinstance(v, (datetime, date)):
         return float(v.toordinal())
@@ -181,14 +189,34 @@ def autopick_forecast_columns(
     """
     best: Optional[Dict[str, Any]] = None
     best_score: Tuple[int, float] = (0, 0.0)
+    rejected_count = 0
     for sheet in sheets:
         cols = getattr(sheet, "columns", [])
         date_cols = [c for c in cols if c.kind == "date"]
         numeric_cols = [c for c in cols if c.kind == "numeric"]
         if not date_cols or not numeric_cols:
             continue
+        # Track A Phase 4 (2026-06-04) — density gate. Total row count
+        # for ratio math; columns with `<30% non-null OR <6 absolute
+        # non-nulls` are excluded entirely. Prevents sparse columns
+        # from winning the picker on spread alone (Phase 3 regression
+        # discovered post-J19).
+        total_rows = max(getattr(sheet, "n_rows", 0) or 0, 1)
         for date_col in date_cols:
             for num_col in numeric_cols:
+                non_null = num_col.non_null_count or 0
+                density = non_null / total_rows
+                if non_null < _AUTOPICK_MIN_NON_NULL_COUNT or density < _AUTOPICK_MIN_NON_NULL_RATIO:
+                    rejected_count += 1
+                    print(
+                        f"[autopick] rejected ({date_col.name}, {num_col.name}) "
+                        f"in sheet {sheet.name!r} — density {density:.2f} "
+                        f"(min {_AUTOPICK_MIN_NON_NULL_RATIO:.2f}), "
+                        f"non_null {non_null} "
+                        f"(min {_AUTOPICK_MIN_NON_NULL_COUNT})",
+                        flush=True,
+                    )
+                    continue
                 # Score: (non_null_count, value_spread) — descending.
                 # Track A Phase 3 R3v3 (2026-06-04) — spread is now
                 # computed from the parser's pre-computed minv/maxv on
@@ -207,7 +235,7 @@ def autopick_forecast_columns(
                         if isinstance(v, (int, float))
                     ]
                     spread = (max(samples) - min(samples)) if len(samples) >= 2 else 0.0
-                score = (num_col.non_null_count, spread)
+                score = (non_null, spread)
                 if score > best_score:
                     best_score = score
                     best = {

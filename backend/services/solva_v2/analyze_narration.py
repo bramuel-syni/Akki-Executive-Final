@@ -37,6 +37,7 @@ from typing import Any, Dict, List, Optional
 
 from services.synisense.shield.client import invoke as shield_invoke
 from services.workbook_analyzer.schema import WorkbookAnalysis
+from services.workbook_analyzer import _FORECAST_LOW_R2_THRESHOLD
 
 
 @dataclass
@@ -701,7 +702,19 @@ async def narrate_analysis(
             "date_col": forecast_meta.get("date_col"),
             "value_col": forecast_meta.get("value_col"),
             "picker_reason": forecast_meta.get("picker_reason", ""),
+            "r2": forecast_meta.get("r2"),  # may be None if engine didn't fit
         }
+        # Track A Phase 4 (2026-06-04) — low-R² safety-net flag.
+        # Parallel to Phase 3 R3v5's safety-net branch but for forecast
+        # QUALITY rather than forecast PRESENCE. When the engine fit a
+        # model but R² is below `_FORECAST_LOW_R2_THRESHOLD` (default
+        # 0.30 = "noise"), the FE should render the forecast block
+        # with a "low confidence" banner — the data fit but the signal
+        # is weak. Block is NOT dropped (deterministic engine output
+        # preserved); just flagged.
+        r2 = forecast_meta.get("r2")
+        if r2 is not None and r2 < _FORECAST_LOW_R2_THRESHOLD:
+            result["partial_narration_missing_forecast_low_signal"] = True
     # Merge per-tab partial flags into the top-level result dict
     # (NOT inside observations[]). FE consumers read these flags
     # directly off the persisted narration row.

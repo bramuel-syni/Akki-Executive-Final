@@ -325,9 +325,13 @@ app.include_router(synisense_metrics_router.router)
 app.include_router(synisense_shield_router.router)
 app.include_router(synisense_engine_router.router)
 # Phase C — Chat Protective Layer + Audit Panel.
-from routers import chat_audit_panel as _chat_audit_panel  # noqa: E402
+# Track A Phase 4 (2026-06-04) — `chat_audit_panel` previously
+# imported + included twice (here AND at line ~239 earlier in this
+# file), generating duplicate operation_ids `get_audit_panel`,
+# `get_audit_panel_aggregate`, `list_archived_chats`,
+# `permanent_delete_chat`. Removed the duplicate include here; the
+# earlier registration at line ~239 is the canonical one.
 from routers import documents_async_mirror as _docs_async_mirror  # noqa: E402
-app.include_router(_chat_audit_panel.router)
 app.include_router(_docs_async_mirror.router)
 # HOME sprint (2026-05-12) — ExCo teams grouping function.
 app.include_router(exco_teams_router.router)

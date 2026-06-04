@@ -39,7 +39,7 @@ from .citation_resolver import (
     CitationUnverifiable,
 )
 from .monte_carlo import run_monte_carlo
-from .forecaster import run_forecast, autopick_forecast_columns
+from .forecaster import run_forecast, autopick_forecast_columns, _FORECAST_LOW_R2_THRESHOLD
 from .anomaly_detector import detect_anomalies
 from .signal_extractor import extract_signals_for
 from .refuse_to_decide import validate_no_imperatives, RefuseToDecideViolation
@@ -61,6 +61,7 @@ __all__ = [
     "run_monte_carlo",
     "run_forecast",
     "autopick_forecast_columns",
+    "_FORECAST_LOW_R2_THRESHOLD",
     "detect_anomalies",
     "extract_signals_for",
     "validate_no_imperatives",

@@ -1,7 +1,6 @@
 """Documents: upload pipeline, thread, list/get/patch/archive/download, generate-meta."""
 from __future__ import annotations
 
-import io
 import logging
 import uuid
 from pathlib import Path
@@ -9,12 +8,11 @@ from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from datetime import datetime, timezone
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from llm_service import call_llm as llm_call_llm, parse_json_response
 from documents_service import (
-    ACCEPT_EXT, MAX_BYTES, save_to_storage, read_from_storage,
+    ACCEPT_EXT, MAX_BYTES, save_to_storage,
     delete_from_storage, extract_text, make_preview,
 )
 from services import clamav_service
@@ -1336,8 +1334,8 @@ async def prompted_edit(
     }
 
 
-import re  # used by prompted_edit fence-stripping
-import logging as _logging
+import re  # noqa: E402  used by prompted_edit fence-stripping
+import logging as _logging  # noqa: E402
 logger = _logging.getLogger("documents")
 
 
@@ -1742,7 +1740,6 @@ async def download_document(
         rendered = buf.getvalue()
     else:  # pptx
         from pptx import Presentation as _Pres
-        from pptx.util import Inches as _In
         import io as _io
         prs = _Pres()
         slide_layout = prs.slide_layouts[1]
@@ -2321,38 +2318,11 @@ async def archive_document(
     return {"ok": True}
 
 
-@router.get("/contexts/{context_id}/documents/{doc_id}/download")
-async def download_document(
-    context_id: str, doc_id: str,
-    ctx: Dict[str, Any] = Depends(require_context_membership()),
-):
-    d = await db.documents.find_one({"id": doc_id, "context_id": context_id})
-    if not d or d.get("status") == "archived":
-        raise HTTPException(status_code=404, detail="Document not found")
-    # Phase 10: S3 backend → 302 to a presigned URL. Local backend →
-    # keep the streaming response for dev / tests (no presign target).
-    from services import storage_service
-    backend = storage_service.get_storage()
-    if backend.backend == "s3":
-        try:
-            url = backend.get_presigned_url(
-                d["storage_key"],
-                ttl_seconds=300,
-                response_content_disposition=f'attachment; filename="{d.get("original_filename", "download")}"',
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"presign failed: {e}")
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url=url, status_code=302)
-    try:
-        data = read_from_storage(d["storage_key"])
-    except FileNotFoundError:
-        raise HTTPException(status_code=410, detail="Underlying file is no longer available")
-    return StreamingResponse(
-        io.BytesIO(data),
-        media_type=d.get("mime_type", "application/octet-stream"),
-        headers={"Content-Disposition": f'attachment; filename="{d.get("original_filename", "download")}"'},
-    )
+# Track A Phase 4 (2026-06-04) — Removed a dead-code redefinition of
+# `download_document` that was registered on the same route as the
+# Phase E.3 watermarked-export handler at line ~1671. FastAPI only
+# dispatches to the first-registered handler on identical routes;
+# the second was unreachable. Ruff F811 confirmed unused-redefinition.
 
 
 # ---------------------------------------------------------------------------
@@ -2365,10 +2335,10 @@ async def download_document(
 # Existing docs continue to work; anchors materialise on first read or on the
 # nightly sweep, whichever comes first.
 # ---------------------------------------------------------------------------
-import os as _os
-from fastapi import Header
+import os as _os  # noqa: E402
+from fastapi import Header  # noqa: E402
 
-from paragraph_anchors import compute_paragraphs, PARAGRAPH_ANCHOR_VERSION
+from paragraph_anchors import compute_paragraphs, PARAGRAPH_ANCHOR_VERSION  # noqa: E402
 
 
 async def _materialise_paragraphs(d: Dict[str, Any]) -> Dict[str, Any]:
