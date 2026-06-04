@@ -118,7 +118,32 @@ def _content_hash(*, objective: str, blocks: List[_DetBlock]) -> str:
     return h.hexdigest()[:24]
 
 
-def _build_prompt(*, objective: str, blocks: List[_DetBlock]) -> str:
+def _build_prompt(
+    *,
+    objective: str,
+    blocks: List[_DetBlock],
+    workbook_context: Optional[Dict[str, Any]] = None,
+    forecast_meta: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Build the LLM prompt.
+
+    Track A Phase 3 R3v2 (2026-06-04) — the prior prompt told Claude
+    the evidence list was the entire context; Claude could not see
+    that the spreadsheet's first column was a date axis (months/
+    quarters) rather than an entity axis (locations/customers).
+    Result: narration described rows as "locations". This version:
+
+      1. Injects a `workbook_context` block that explicitly names
+         the date column(s) + numeric column(s) so the model knows
+         rows are points in time, not entities.
+      2. Injects an explicit `FORECAST INPUT` block when forecasts
+         exist + REQUIRES a `whats_likely_next` observation in
+         that case.
+      3. Strengthens tone to McKinsey-memo (one concrete example).
+      4. Bans statistical jargon (σ, standard deviation, percentile,
+         variance) from headline + observation body — Sources tab
+         keeps the raw stats.
+    """
     objective_line = objective.strip() or "(none provided)"
     evidence_lines = []
     for i, b in enumerate(blocks):
@@ -126,12 +151,67 @@ def _build_prompt(*, objective: str, blocks: List[_DetBlock]) -> str:
             f"[{i}] kind={b.kind} :: {b.detail}  (cite={b.citation.get('cell_range') or 'n/a'})"
         )
     evidence_joined = "\n".join(evidence_lines) if evidence_lines else "(none)"
-    return f"""You are an analytical narrator producing an executive read-out of a
-deterministic spreadsheet analysis. You may ONLY narrate the evidence
-listed below; do NOT invent figures or claims.
+
+    # ── Workbook context block ────────────────────────────────
+    ctx = workbook_context or {}
+    date_cols = ctx.get("date_columns") or []
+    numeric_cols = ctx.get("numeric_columns") or []
+    workbook_ctx_block = ""
+    if date_cols:
+        workbook_ctx_block = (
+            "\nWORKBOOK STRUCTURE\n"
+            "The first column is a temporal axis (e.g. dates, months, "
+            "quarters). Rows represent points in time, NOT entities or "
+            "locations. Narrate trends across periods, not across "
+            "entities.\n"
+            f"Date columns: {', '.join(date_cols)}\n"
+            f"Numeric columns: {', '.join(numeric_cols) or '(none)'}\n"
+        )
+
+    # ── Forecast input block ───────────────────────────────────
+    forecast_required = bool(forecast_meta and forecast_meta.get("date_col"))
+    forecast_block = ""
+    if forecast_required:
+        forecast_block = (
+            "\nFORECAST INPUT\n"
+            f"A forecast has been computed on ({forecast_meta['date_col']}, "
+            f"{forecast_meta['value_col']}). The autopicker chose this "
+            f"pair because: {forecast_meta.get('picker_reason', 'highest signal')}.\n"
+            "REQUIREMENT: Because forecast input is present above, your "
+            "`observations` array MUST contain at least one entry whose "
+            "`tab` is exactly `whats_likely_next`. That observation must "
+            "narrate the forecast projection in plain business language "
+            "(e.g. 'if the trend holds, Q1 lands 12% below plan'). Do NOT "
+            "skip this — the user explicitly asked for forward-looking "
+            "narration.\n"
+        )
+
+    return f"""You are a strategy partner writing the bottom-line read-out for a
+McKinsey-style executive briefing memo. You may ONLY narrate the
+evidence listed below; do NOT invent figures or claims.
+
+VOICE
+- Headline-first. Lead with what happened in plain business
+  language: "Q1 actual sales fell 14% YoY across the trade book",
+  NOT "the time-series shows a 14% decrease from prior period".
+- Translate statistics into so-what language. A 2.11σ outlier is
+  "one month broke pattern", not "row 25 is 2.11 standard
+  deviations above the mean".
+- BANNED in headline and observation body: the words/symbols
+  "standard deviation", "σ", "sigma", "variance", "percentile",
+  "z-score". (Statisticians read the Sources tab; executives read
+  this narration.)
+- Frame rows as time periods, not as entities.
+
+Good headline example:
+  "Q1 actual sales fell 14% YoY across the trade book despite
+   quantity holding +12% — pricing power eroded in three regions."
+Bad headline example (rejected):
+  "A single location in Revenue recorded revenue more than twice
+   the standard deviation above average."
 
 User objective: {objective_line}
-
+{workbook_ctx_block}{forecast_block}
 Deterministic evidence (each numbered; cite by index):
 {evidence_joined}
 
