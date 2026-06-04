@@ -146,7 +146,7 @@ const SharedArtefact = lazy(() => import("@/pages/SharedArtefact"));
 const InboundQueue = lazy(() => import("@/pages/InboundQueue"));
 const StudioComposerPage = lazy(() => import("@/pages/StudioComposerPage"));
 const WorkStudio = lazy(() => import("@/pages/WorkStudio"));
-const WorkStudioAnalyze = lazy(() => import("@/pages/WorkStudioAnalyze"));  // eslint-disable-line @typescript-eslint/no-unused-vars
+const WorkStudioAnalyze = lazy(() => import("@/pages/WorkStudioAnalyze"));  // eslint-disable-line no-unused-vars
 const AnalyzeJournal = lazy(() => import("@/pages/AnalyzeJournal"));
 // Phase Z (2026-05-27, Z-slice-4) — Canonical Documents Journal page.
 const DocumentsPage = lazy(() => import("@/pages/DocumentsPage"));
