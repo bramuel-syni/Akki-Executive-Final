@@ -766,32 +766,84 @@ async def synthesize_v2_endpoint(
         )
         return update["narration"]
 
-    first_blob = blobs[0]
-    raw_bytes = base64.b64decode(first_blob["data_b64"])
-    fmt = first_blob.get("file_format", "xlsx")
-    try:
-        sheets, matrices = parse_workbook(blob=raw_bytes, file_format=fmt)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(422, f"workbook_parse_failed: {e!s:.140}")
+    # Track A Phase 4 (2026-06-04) — multi-workbook synthesis.
+    #
+    # Pre-Phase-4 behaviour: only blobs[0] was parsed; secondary files
+    # uploaded via /upload-multi were silently ignored at synthesis
+    # time. Phase 4 lifts that ceiling to MAX 5 workbooks per run
+    # (PRD cap; matches the Track A Phase 1 multi-upload contract).
+    #
+    # Sheet-name disambiguation: each file's sheets are renamed to
+    # `<filename-stem>::<sheet>` so the union resolves cleanly across
+    # the citation resolver AND so the narration prompt can attribute
+    # findings to a specific source. The first sheet of the first
+    # file feeds `workbook_context_for_prompt` (rows=time) so the
+    # prompt envelope stays identical to the Phase 3 R3v2 contract.
+    MAX_BLOBS = 5
+
+    combined_sheets: List[Any] = []
+    combined_matrices: Dict[str, List[List[Any]]] = {}
+    source_files_meta: List[Dict[str, Any]] = []
+    primary_filename = blobs[0].get("filename", "analysis")
+    primary_fmt = blobs[0].get("file_format", "xlsx")
+    total_bytes = 0
+
+    for blob in blobs[:MAX_BLOBS]:
+        raw_bytes = base64.b64decode(blob["data_b64"])
+        fmt = blob.get("file_format", "xlsx")
+        fname = blob.get("filename", "source")
+        total_bytes += len(raw_bytes)
+        try:
+            sheets, matrices = parse_workbook(blob=raw_bytes, file_format=fmt)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[synthesize_v2] parse_workbook failed for %s: %s",
+                fname, exc,
+            )
+            source_files_meta.append({
+                "source_id": blob.get("source_id"),
+                "filename": fname,
+                "parse_failed": True,
+            })
+            continue
+
+        # Strip extension; cap at 30 chars to keep cite-range strings
+        # bounded. Citation regex tolerates `::` in sheet names.
+        stem = fname.rsplit(".", 1)[0][:30]
+        renamed_sheets: List[Any] = []
+        for sheet in sheets:
+            new_name = f"{stem}::{sheet.name}"
+            renamed_sheet = sheet.model_copy(update={"name": new_name})
+            renamed_sheets.append(renamed_sheet)
+            combined_matrices[new_name] = matrices.get(sheet.name, [])
+        combined_sheets.extend(renamed_sheets)
+        source_files_meta.append({
+            "source_id": blob.get("source_id"),
+            "filename": fname,
+            "sheet_count": len(renamed_sheets),
+        })
+
+    if not combined_sheets:
+        raise HTTPException(422, "workbook_parse_failed_all_sources")
 
     wba = WorkbookAnalysis(
         id="wba-narr-" + aid[-12:],
         account_id=current["id"],
         context_id=row.get("context_id"),
         document_id=aid,
-        filename=first_blob.get("filename", "analysis"),
-        file_format=fmt,
-        file_size_bytes=len(raw_bytes),
+        filename=primary_filename,
+        file_format=primary_fmt,
+        file_size_bytes=total_bytes,
         status="ready",
-        sheets=sheets,
+        sheets=combined_sheets,
         signals=[], simulations=[], forecasts=[], anomalies=[],
     )
-    resolver = WorkbookCitationResolver(sheets)
+    resolver = WorkbookCitationResolver(combined_sheets)
 
-    # Signals — every sheet.
+    # Signals — every sheet across every parsed source.
     all_signals = []
-    for sheet in sheets:
-        matrix = matrices.get(sheet.name, [])
+    for sheet in combined_sheets:
+        matrix = combined_matrices.get(sheet.name, [])
         try:
             sigs = extract_signals_for(sheet=sheet, sheet_matrix=matrix)
         except Exception:  # noqa: BLE001
@@ -805,31 +857,23 @@ async def synthesize_v2_endpoint(
             all_signals.append(s)
     wba.signals = all_signals
 
-    # Forecast — Bug #30 autopicker.
-    #
-    # Track A Phase 3 R3v3 (2026-06-04) — `forecast_meta_for_prompt`
-    # is now assigned the moment the autopicker succeeds, BEFORE
-    # `run_forecast` is called. Previously the assignment was inside
-    # the `try`, so a swallowed ValueError from `run_forecast` (e.g.
-    # the date column failed `_to_ordinal` on every row → < 3 pairs)
-    # dropped the autopicker's decision before the prompt was built.
-    # The prompt then had no way to require `whats_likely_next`.
-    pick = autopick_forecast_columns(sheets=sheets)
+    # Forecast — Bug #30 autopicker now runs across the union of all
+    # sheets from all parsed sources. The picker selects the single
+    # strongest (date, numeric) pair globally; per-source picking is
+    # deferred to Phase 5 (per Pre-Read scope).
+    pick = autopick_forecast_columns(sheets=combined_sheets)
     forecast_meta_for_prompt: Optional[Dict[str, Any]] = None
     if pick is not None:
-        # Surface the autopicker choice for the prompt regardless of
-        # whether `run_forecast` produces a deterministic vector. The
-        # prompt scaffolding can require `whats_likely_next` based on
-        # "we attempted a forecast on (date_col, value_col)" even when
-        # the deterministic engine returned no projections.
         forecast_meta_for_prompt = {
             "date_col":      pick["date_column"],
             "value_col":     pick["value_column"],
             "picker_reason": pick.get("picker_reason", ""),
         }
-        sheet_obj = next((s for s in sheets if s.name == pick["sheet"]), None)
+        sheet_obj = next(
+            (s for s in combined_sheets if s.name == pick["sheet"]), None,
+        )
         if sheet_obj:
-            sheet_matrix = matrices.get(pick["sheet"]) or []
+            sheet_matrix = combined_matrices.get(pick["sheet"]) or []
             date_idx = next(
                 (i for i, c in enumerate(sheet_obj.columns) if c.name == pick["date_column"]), -1,
             )
@@ -849,33 +893,31 @@ async def synthesize_v2_endpoint(
                 )
                 resolver.resolve_many(fc.citations)
                 wba.forecasts.append(fc)
-                # Track A Phase 4 (2026-06-04) — pass the engine's R²
-                # back through forecast_meta so narrate_analysis can
-                # fire the low-signal flag when the fit is noisy.
+                # Phase 4 — pass the engine's R² back through
+                # forecast_meta so narrate_analysis can fire the
+                # low-signal flag when the fit is noisy.
                 forecast_meta_for_prompt["r2"] = float(fc.r2)
             except (ValueError, CitationUnverifiable) as exc:
-                # Observability — preserve graceful-degradation
-                # behaviour but make the swallowed exception visible
-                # in the supervisor backend log (was silent in R3v2,
-                # masked the date-ordinal classifier bug for J19).
                 logger.warning(
                     "[run_forecast] swallowed exception on (%s, %s): %s",
                     pick["date_column"], pick["value_column"], exc,
                 )
 
-    # Anomalies — top-6 per numeric column on the first sheet.
-    #
-    # Track A Phase 3 R3v3 (2026-06-04) — call-site fix. The prior
-    # invocation passed `sheet=<WorkbookSheet>, column=<col>` (object
-    # types) whereas `detect_anomalies` expects `sheet: str,
-    # column_name: str, column_letter: str, header_row_index: int,
-    # col_index_zero: int`. Every call raised TypeError and got
-    # swallowed by the broad `except Exception`, so `wba.anomalies`
-    # was always empty and `whats_odd` never had block data. No
-    # engine schema change — purely call-site.
-    if sheets:
-        first_sheet = sheets[0]
-        first_matrix = matrices.get(first_sheet.name) or []
+    # Anomalies — top-6 per numeric column on the FIRST sheet of EACH
+    # parsed source. Phase 4 extension: previously only the first
+    # sheet of the first file was scanned. Now every primary sheet of
+    # every parsed source contributes anomaly rows.
+    first_sheet_per_source: List[Any] = []
+    seen_prefixes: set = set()
+    for sheet in combined_sheets:
+        prefix = sheet.name.split("::", 1)[0] if "::" in sheet.name else sheet.name
+        if prefix in seen_prefixes:
+            continue
+        seen_prefixes.add(prefix)
+        first_sheet_per_source.append(sheet)
+
+    for first_sheet in first_sheet_per_source:
+        first_matrix = combined_matrices.get(first_sheet.name) or []
         for col_idx, col in enumerate(first_sheet.columns):
             if col.kind != "numeric":
                 continue
@@ -904,12 +946,11 @@ async def synthesize_v2_endpoint(
                 wba.anomalies.append(a)
 
     # Track A Phase 3 R3v2 — workbook_context tells the LLM that
-    # the first column is a temporal axis (rows = points in time,
-    # NOT entities). Computed once from the first sheet — every
-    # other sheet follows the same prompt envelope.
+    # the first column is a temporal axis. Phase 4 — computed from
+    # the first sheet of the first parsed source.
     workbook_context_for_prompt: Optional[Dict[str, Any]] = None
-    if sheets:
-        first_sheet_for_ctx = sheets[0]
+    if combined_sheets:
+        first_sheet_for_ctx = combined_sheets[0]
         workbook_context_for_prompt = {
             "date_columns": [
                 c.name for c in first_sheet_for_ctx.columns if c.kind == "date"
@@ -917,6 +958,11 @@ async def synthesize_v2_endpoint(
             "numeric_columns": [
                 c.name for c in first_sheet_for_ctx.columns if c.kind == "numeric"
             ],
+            # Phase 4 — surface the multi-source roster to the prompt
+            # so the LLM can attribute cross-file patterns. Each entry
+            # is `{filename, sheet_count}`; failed parses are flagged
+            # so the LLM doesn't fabricate findings from missing data.
+            "source_files": source_files_meta,
         }
 
     narration = await narrate_analysis(

@@ -180,6 +180,7 @@ def _build_prompt(
     ctx = workbook_context or {}
     date_cols = ctx.get("date_columns") or []
     numeric_cols = ctx.get("numeric_columns") or []
+    source_files = ctx.get("source_files") or []
     workbook_ctx_block = ""
     if date_cols:
         workbook_ctx_block = (
@@ -190,6 +191,40 @@ def _build_prompt(
             "entities.\n"
             f"Date columns: {', '.join(date_cols)}\n"
             f"Numeric columns: {', '.join(numeric_cols) or '(none)'}\n"
+        )
+
+    # Track A Phase 4 (2026-06-04) — multi-source roster. When the
+    # synthesis is over 2+ workbooks, the sheet names in deterministic
+    # citations carry a `<filename-stem>::<sheet>` prefix. The roster
+    # block tells the LLM which file each prefix maps to so cross-file
+    # attribution lands in the narration ("Lighthouse's Q1 contrasts
+    # with Apollo's Q1 dip"). Single-file analyses skip the block
+    # entirely so the prompt stays identical to Phase 3.
+    multi_source_block = ""
+    if len(source_files) >= 2:
+        roster_lines: List[str] = []
+        for sf in source_files:
+            label = sf.get("filename", "source")
+            if sf.get("parse_failed"):
+                roster_lines.append(
+                    f"  - {label}: parse failed; ignore for this run."
+                )
+            else:
+                stem = (sf.get("filename") or "source").rsplit(".", 1)[0][:30]
+                roster_lines.append(
+                    f"  - {label}: sheet-prefix `{stem}::` "
+                    f"({sf.get('sheet_count', 0)} sheet(s))"
+                )
+        multi_source_block = (
+            "\nSOURCE FILES (multi-workbook synthesis)\n"
+            "This run synthesises evidence across the following "
+            "workbooks. Each deterministic citation's sheet name is "
+            "prefixed with the source's filename stem and a `::` "
+            "separator (e.g. `apollo_q1::Sales`). When attributing a "
+            "finding, name the source workbook in plain English (NOT "
+            "the prefix) so the narration reads naturally.\n"
+            + "\n".join(roster_lines)
+            + "\n"
         )
 
     # ── Three labeled deterministic blocks ────────────────────
@@ -285,7 +320,7 @@ Bad headline example (rejected):
    the standard deviation above average."
 
 User objective: {objective_line}
-{workbook_ctx_block}{signals_block}{forecast_block}{anomalies_block}{sims_block}
+{workbook_ctx_block}{multi_source_block}{signals_block}{forecast_block}{anomalies_block}{sims_block}
 {required_tabs_line}
 
 Return STRICT JSON with this shape (no markdown fences):

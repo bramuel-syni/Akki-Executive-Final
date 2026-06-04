@@ -276,13 +276,18 @@ def test_forecast_autopicker_single_numeric_still_works():
     from services.workbook_analyzer import autopick_forecast_columns
     from services.workbook_analyzer.schema import WorkbookSheet, WorkbookColumn
 
+    # Track A Phase 4 (2026-06-04) — autopicker density gate raised
+    # the absolute non-null floor from 3 to 6 (Tightening 1 approved).
+    # This regression test now uses 10 non-nulls to satisfy the gate
+    # while still exercising the "single numeric column wins"
+    # behaviour the test was originally locking down.
     sheet = WorkbookSheet(
         name="S",
-        n_rows=5, n_columns=2,
+        n_rows=10, n_columns=2,
         header_row_index=1,
         columns=[
-            WorkbookColumn(name="Date", letter="A", kind="date",    non_null_count=5, null_count=0, sample_values=["2026-01-01"]),
-            WorkbookColumn(name="Val",  letter="B", kind="numeric", non_null_count=5, null_count=0, sample_values=[1, 2, 3]),
+            WorkbookColumn(name="Date", letter="A", kind="date",    non_null_count=10, null_count=0, sample_values=["2026-01-01"]),
+            WorkbookColumn(name="Val",  letter="B", kind="numeric", non_null_count=10, null_count=0, minv=1.0, maxv=100.0, sample_values=[1, 2, 3]),
         ],
     )
     pick = autopick_forecast_columns(sheets=[sheet])

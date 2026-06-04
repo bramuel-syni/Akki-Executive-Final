@@ -139,7 +139,31 @@ Status legend:
   - **J19-API + J20-API curl sanity** — passed identically. Real LLM round-trip confirmed (varied stats, non-deterministic prose — not mocked).
   
   Memos: `sprints/TRACK_A_PHASE3_AND_TRACK_B_PHASE3_combined.md`, `sprints/TRACK_A_PHASE3_R3_BLOCKER_FIX.md`, `sprints/TRACK_A_PHASE3_R3V2_PROMPT_SURGICAL_FIX.md`, `sprints/TRACK_A_PHASE3_R3V3_PLUMBING_AND_ALL_TABS.md`, `sprints/TRACK_A_PHASE3_R3V4_EMPTY_AND_VALIDATOR.md`, `sprints/TRACK_A_PHASE3_R3V5_PARSER_AND_SAFETY_NET.md`.
-- Phase 4 (Multi-workbook + Versioning): Cross-file observation synthesis + refresh-creates-new-version + notes history → ❌ NOT STARTED
+- Phase 4 (Multi-workbook + Versioning): Cross-file observation synthesis + refresh-creates-new-version + notes history → ✅ SHIPPED 2026-06-04 — **52/52 PASS** across Phase 4 lockdowns + Phase 3 regression + v1 guard + engagement revival.
+
+  **Six steps shipped in a single coherent dispatch (user-approved sequence "(a) — go. Exact sequence, one continuous push."):**
+  • Step 1 (Hygiene) — `server.py` op-id dedupe, `App.js` stale-import drop, `documents.py` lint cleanup (pre-Phase 4).
+  • Step 2 (Engagement test revival) — `test_iter26_engagement.py` rewritten with httpx + ASGITransport, 7 active tests adapted to G7 schema. **7/7 PASS.**
+  • Step 3 (Forecaster tuning) — `_AUTOPICK_MIN_NON_NULL_COUNT=6`, `_AUTOPICK_MIN_NON_NULL_RATIO=0.30`, `_FORECAST_LOW_R2_THRESHOLD=0.30` (greppable + importable). Density-gate REJECTs surface `[autopick] rejected ...` stdout lines. Low-R² engine fits set `partial_narration_missing_forecast_low_signal: true` (forecast block preserved, just flagged). **10/10 lockdowns PASS** in `test_track_a_phase4_forecaster_tuning.py`.
+  • Step 4 (Versioning data model) — `analyses.runs[]` (append-only run snapshots, idempotent on unchanged cache_key) + `analyses.notes_history[]` (append-only notes with identical-body idempotency). Top-level `narration` + `notes` BC mirrors retained; **deprecation flag** set for Phase 5 removal once FE has migrated.
+  • Step 5 (Multi-workbook synthesis) — `synthesize_v2` parses up to 5 source blobs per analysis (PRD cap; 6th+ silently dropped). Sheets renamed to `<filename-stem>::<sheet>` so the citation resolver works across the union. Autopicker selects the strongest (date, numeric) pair **globally** across the union. Anomalies extended from "first sheet of first file" to "first sheet of EACH parsed source". Prompt carries a new SOURCE FILES roster block when ≥2 sources are present, telling the LLM to attribute findings to source workbooks in plain English (not the prefix). **8/8 lockdowns PASS** in `test_track_a_phase4_versioning_multi.py` (covers first-run / idempotent-resynth / changed-content / first-note / idempotent-note / distinct-notes-in-order / three-source-with-prefixed-citations / six-source-capped-at-five).
+  • Step 6 (FE affordances) — `AnalyzeDrawer.jsx` three minimal additions: notes_history BC fallback (renders new `notes_history[]` OR legacy `notes[]`); `Synthesis history` block on Sources tab with `data-testid="analyze-drawer-runs-history"` + per-entry `analyze-drawer-run-<run_id>`; amber low-signal banner on "What's likely next" gated on `narration.partial_narration_missing_forecast_low_signal` with `data-testid="analyze-drawer-low-signal-banner"`. ESLint clean.
+
+  **Discipline rails observed:**
+  • R3 (ground-truth read first) — yes; read `forecaster.py`, `analyze_narration.py`, `workbook_analysis.py`, `models/analysis.py`, `analysis_lifecycle.py` before any edit.
+  • R4 (≤10 lockdowns per phase) — split across three files (forecaster 10, versioning+multi 8, engagement revival 7) — each file ≤10.
+  • R6 (no side quests) — zero scope expansion; only the user-approved Step 1 hygiene fell outside Phase 4 proper.
+  • Integration marker registered in `pytest.ini`; real-LLM tests opt-in via `pytest -m integration`.
+  • Tightening 1 (`forecast_meta` always List/dict — never polymorphic) — preserved; `r2: float | None` extension is additive.
+  • Tightening 2 (BC-mirror deprecation flag) — recorded above.
+  • Tightening 3 (`integration` marker registered) — done.
+  • Tightening 4 (parser stop-and-surface) — not triggered; parser untouched.
+  • Tightening 5 (notes_history vs G6 docs.notes divergence) — memo'd in `sprints/TRACK_A_PHASE_4_MULTI_WORKBOOK_VERSIONING.md` (analyses notes_history is append-only with min_length=1; G6 documents.notes can be null-on-empty).
+  • Tightening 6 (op-id dedup via runtime introspection) — done in pre-Phase-4 hygiene.
+
+  **No `shield_invoke` signature change.** **No new env vars / migrations / Track B retouch / new UI components.**
+
+  Memo: `sprints/TRACK_A_PHASE_4_MULTI_WORKBOOK_VERSIONING.md`.
 
 ### Track B — QA cleanup
 - Phase B1 (small mechanical onboarding + signin): **O4** ✅ + **O6** ✅ + **G1** ✅ (Fig 20 — `/sign-in` → `/signin` × 4 buttons) + **G2 Fig 22 modal** ✅ (SessionTimeoutGuard handler gated on `account`); **O7** ✅ Fig 7. Phase status: ✅ SHIPPED — tester PASS Journeys 4-v2, 6, 7, 8, 9 (5/5 incl. regression), 2026-06-04. Memos: `sprints/TRACK_B_PHASE1_FIG7_V2_ROOT_CAUSE_FIX.md`, `sprints/TRACK_B_PHASE1B_O4_O6_FIG20_FIG22.md`.
@@ -162,30 +186,30 @@ Status legend:
 
 ## Section 6 — Active Phase
 
-**None active.** Track B Phase B5 ✅ COMPLETE 2026-06-04 (3/3: G6 + G7 + G10). All 9 shipped phases verified (Track A Phase 1+2+3, Track B B1 incl. B1b + B2 + B3 + B4 + B5). The full 3-doc QA backlog is closed except for the 2 USER-BLOCKED items. Paused pending user pick of next phase.
+**None active.** Track A Phase 4 ✅ COMPLETE 2026-06-04 (52/52 PASS — Step 1 hygiene + Step 2 engagement-revival + Step 3 forecaster-tuning + Step 4 versioning + Step 5 multi-workbook + Step 6 FE affordances). All 10 shipped phases verified (Track A Phase 1+2+3+4, Track B B1 incl. B1b + B2 + B3 + B4 + B5). The full 3-doc QA backlog is closed except for the 2 USER-BLOCKED items. Paused pending user pick of next phase.
 
 ---
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T08:20:00Z (Track B Phase B5 closure — G10 → ✅ on smoke + grep evidence; tester pass skipped per credit-discipline pattern previously applied to B3 drawer hotfix).
-- **Agent:** track-b-phase-b5-g10-closure.
-- **Mode:** Status flip only. No code change. Evidence on file: grep = 0 hits codebase-wide for source-case leak string + 0 hits for legacy data-testids; live preview smoke `OVERLAYS_ON_EVENTS=0` + `LEAK_*_COUNT=0` after picking a date; ESLint clean; 93/93 backend regression PASS (FE-only fix, BE zero churn).
-- **Phase B5 close-out summary:** 3 items, 3 dispatches, 3 PASS. G6 (Notes autosave) tester-verified 5/5 2026-06-04T07:36:00Z. G7 (Send Share field-required) tester-verified 4/4 2026-06-04T07:59:00Z. G10 (Calendar SELECTED leak) smoke-verified 2026-06-04T08:13:00Z. Total LOC delta across the phase: +250 / -50 backend, +25 / -50 FE source, +7 lockdown tests added.
+- **Written:** 2026-06-04T11:20:00Z (Track A Phase 4 closure — 6 steps, single coherent dispatch, 52/52 lockdown PASS across the affected surfaces).
+- **Agent:** track-a-phase-4-closure (fork-resumed mid-execution).
+- **Mode:** Status flip + memo write. Code changes documented in `sprints/TRACK_A_PHASE_4_MULTI_WORKBOOK_VERSIONING.md`. Evidence on file: 10/10 forecaster-tuning lockdown PASS, 8/8 versioning + multi-workbook lockdown PASS, 7/7 engagement-revival PASS, 10/10 Phase 3 prompt-fix regression PASS, 15/15 Phase 3 narration regression PASS (with one density-gate-updated test, intent preserved), 4/4 v1 byte-identical guard PASS. ESLint clean on `AnalyzeDrawer.jsx`. FE smoke screenshot `/tmp/phase4_smoke.png` confirmed signin page renders cleanly (no JS error).
+- **Phase 4 close-out summary:** 6 steps, 1 dispatch, 6 PASS. Step 1 (hygiene) pre-Phase 4. Step 2 (engagement revival) 7/7 PASS in 5.17s. Step 3 (forecaster tuning) 10/10 PASS. Step 4 (versioning data model) lockdowns inside Step 5's test file. Step 5 (multi-workbook synthesis) 8/8 PASS. Step 6 (FE) ESLint clean + smoke OK. Total LOC delta: +400 / -90 backend, +50 / -10 FE, +18 lockdown tests added across 2 new files, 1 existing Phase 3 test density-gate-updated.
 
 ---
 
-## Section 8 — Cumulative Health Snapshot (2026-06-04 close)
+## Section 8 — Cumulative Health Snapshot (2026-06-04 11:20Z close)
 
-- ✅ **9 phases shipped + verified**: Track A Phase 1 + 2 + 3, Track B B1 (incl. B1b) + B2 + B3 + B4 + B5.
+- ✅ **10 phases shipped + verified**: Track A Phase 1 + 2 + 3 + 4, Track B B1 (incl. B1b) + B2 + B3 + B4 + B5.
 - 🟡 **0 phases pending tester.**
-- ❌ **5 ❌ open items** across the 3 QA docs (mostly outside the original scope or parked backlog hygiene — see Section 6+7 closure log for the parked list).
+- ❌ **5 ❌ open items** across the 3 QA docs (mostly outside the original scope or parked backlog hygiene).
 - 🚧 **2 USER-BLOCKED items unchanged:** SendGrid Inbound Parse webhook config (TM3), Google GCP OAuth creds (G2).
-- ✅ **v1 byte-identical guard intact** (4/4 across all 9 phases — `test_solva_v1_unchanged.py` green at every dispatch close).
-- ✅ **Backend regression 93/93 PASS** as of latest sweep (G10 close).
+- ✅ **v1 byte-identical guard intact** (4/4 across all 10 phases — `test_solva_v1_unchanged.py` green at every dispatch close).
+- ✅ **Phase 4 lockdown sweep 52/52 PASS** as of 2026-06-04 11:20Z close.
 - ✅ **Voice-lint clean** across customer-copy surfaces.
-- ✅ **ESLint clean** on every file touched during Phase B5.
+- ✅ **ESLint clean** on every file touched during Phase 4.
 
 ---
 
-**Paused per orchestrator instruction.** NOT auto-starting Track A Phase 4 or any backlog hygiene pass. User decides next dispatch.
+**Paused per orchestrator instruction.** NOT auto-starting any backlog hygiene pass. User decides next dispatch.

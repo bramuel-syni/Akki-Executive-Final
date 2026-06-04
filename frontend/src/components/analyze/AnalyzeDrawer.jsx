@@ -326,11 +326,11 @@ export default function AnalyzeDrawer({ aid, onClose }) {
                     <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5">
                       Your notes
                     </p>
-                    {(analysis.notes || []).length === 0 ? (
+                    {(analysis.notes_history || analysis.notes || []).length === 0 ? (
                       <p className="text-[12px] italic text-[var(--muted)]">No notes yet.</p>
                     ) : (
                       <ul className="space-y-2" data-testid="analyze-drawer-notes-list">
-                        {(analysis.notes || []).map((n) => (
+                        {(analysis.notes_history || analysis.notes || []).map((n) => (
                           <li
                             key={n.id}
                             className="border border-[var(--rule)] rounded-sm p-3 bg-white"
@@ -398,6 +398,16 @@ export default function AnalyzeDrawer({ aid, onClose }) {
                   className="flex-1 overflow-y-auto px-6 py-5 space-y-3"
                   data-testid="analyze-drawer-whats-likely-next"
                 >
+                  {analysis?.narration?.partial_narration_missing_forecast_low_signal && (
+                    <div
+                      className="border border-amber-300 bg-amber-50/70 rounded-sm p-3 text-[12px] text-amber-900"
+                      data-testid="analyze-drawer-low-signal-banner"
+                    >
+                      The forecast model fit this data weakly (R² below 0.30).
+                      Treat the forward-looking read as exploratory, not a
+                      planning baseline.
+                    </div>
+                  )}
                   {(obsByTab.whats_likely_next || []).length === 0 ? (
                     <p className="text-[12px] italic text-[var(--muted)]">
                       No forecast narration yet. Run synthesis on the Bottom Line tab.
@@ -470,6 +480,32 @@ export default function AnalyzeDrawer({ aid, onClose }) {
                       </p>
                     </div>
                   ))}
+                  {(analysis.runs || []).length > 0 && (
+                    <section className="mt-5" data-testid="analyze-drawer-runs-history">
+                      <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5">
+                        Synthesis history
+                      </p>
+                      <ul className="space-y-1.5">
+                        {(analysis.runs || []).map((r) => (
+                          <li
+                            key={r.run_id}
+                            className="text-[12px] text-[var(--ink)] flex items-center gap-2 border-l-2 border-[var(--rule)] pl-2"
+                            data-testid={`analyze-drawer-run-${r.run_id}`}
+                          >
+                            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">
+                              {r.refused ? "refused" : "run"}
+                            </span>
+                            <span className="truncate flex-1">
+                              {r.headline || "(no headline)"}
+                            </span>
+                            <span className="text-[10px] text-[var(--muted)] ml-auto whitespace-nowrap">
+                              {fmtRel(r.created_at)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
                   {(analysis.refresh_history || []).length > 0 && (
                     <section className="mt-5">
                       <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5">
