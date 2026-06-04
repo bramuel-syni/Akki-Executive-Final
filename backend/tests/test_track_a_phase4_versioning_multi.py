@@ -7,8 +7,8 @@ Lockdowns for the three Phase 4 backend behaviours:
      new one (idempotent re-synthesize on unchanged content).
   2. **`notes_history[]`** — `POST /v2/analyses/{aid}/notes` appends
      to a history array. Identical-body re-submit returns the tail
-     entry as a no-op. Top-level `notes` + `notes_updated_at` mirror
-     the latest entry for backwards-compat.
+     entry as a no-op. Phase 6 — top-level `notes` + `notes_updated_at`
+     BC mirrors REMOVED. `notes_history[-1]` is the canonical source.
   3. **Multi-workbook synthesis** — when `analysis_blobs` carries N≥2
      sources for an analysis, `synthesize_v2` parses all of them
      (capped at 5), renames sheets to `<stem>::<name>`, and surfaces
@@ -185,7 +185,8 @@ async def test_first_synthesize_creates_one_run(transport, monkeypatch):
 @pytest.mark.asyncio
 async def test_idempotent_resynthesize_does_not_append(transport, monkeypatch):
     """Re-call with unchanged content (same cache_key) → no new
-    `runs[]` entry. Top-level `narration` still refreshed."""
+    `runs[]` entry. Phase 6 — no top-level `narration` BC mirror
+    refresh either (mirror removed)."""
     from services.solva_v2 import analyze_narration as narr
     monkeypatch.setattr(narr, "shield_invoke", AsyncMock(return_value=_shield_ok(_OK_NARRATION)))
 
@@ -263,9 +264,12 @@ async def test_first_note_appended_to_history(transport, monkeypatch):
         row = await db.analyses.find_one({"id": aid}, {"_id": 0})
         history = row.get("notes_history") or []
         assert len(history) == 1
-        # BC mirrors.
-        assert row.get("notes") == "Margin compression flagged in week 3."
-        assert row.get("notes_updated_at") == note["created_at"]
+        # Phase 6 — top-level BC mirrors REMOVED. canonical reads
+        # come from notes_history[-1] directly.
+        assert history[-1]["body"] == "Margin compression flagged in week 3."
+        assert history[-1]["created_at"] == note["created_at"]
+        assert "notes" not in row
+        assert "notes_updated_at" not in row
 
 
 # ── 5. Notes history — idempotent re-post returns tail ────────────
@@ -325,7 +329,9 @@ async def test_distinct_notes_append_in_order(transport, monkeypatch):
         assert [n["body"] for n in history] == [
             "First note.", "Second note.", "Third note.",
         ]
-        assert row.get("notes") == "Third note."  # BC mirror = latest
+        # Phase 6 — BC mirror REMOVED. notes_history[-1] is canonical.
+        assert history[-1]["body"] == "Third note."
+        assert "notes" not in row
 
 
 # ── 7. Multi-workbook — N=3 sources union into one run ────────────

@@ -204,13 +204,13 @@ async def test_notes_patch_empty_body_appends_history_entry(transport):
         assert deletion_event["body"] == ""
         assert deletion_event["id"].startswith("note-")
 
-        # Step 3: BC mirror reflects the empty string (NOT null —
-        # divergence vs G6 documents.notes).
+        # Step 3: Phase 6 — top-level BC mirror DROPPED. Reads come
+        # from notes_history[-1].body now.
         row = await db.analyses.find_one({"id": aid}, {"_id": 0})
         history = row.get("notes_history") or []
         assert len(history) == 2
         assert history[-1]["body"] == ""
-        assert row.get("notes") == ""
+        assert "notes" not in row
 
         # Step 4: idempotent repeat — second identical empty POST
         # returns the existing tail entry (no new history row).

@@ -527,24 +527,34 @@ async def test_phase5_loading_checklist_polling_contract(transport):
         assert body.get("status") in {"running", "complete", "failed"}
 
 
-# ── 11. Phase 6 stub flags persist on the FE source ──────────────
+# ── 11. Phase 6 stub flags GONE — surfaces restored ─────────────
 
 
 def test_phase5_phase6_stub_flags_persist():
-    """Grep evidence — `data-phase6="true"` must appear on:
-       • the Edit toggle in DocumentOverlay.jsx
-       • the Revise-with-AI button in DocumentOverlay.jsx
-       • the inline-edit mode indicator in DocumentOverlay.jsx
+    """Track A Phase 6 (2026-06-04) — INVERTED ASSERTION.
+
+    Phase 5 stubbed four surfaces in DocumentOverlay.jsx with
+    `data-phase6="true"` markers (Edit toggle, Revise-with-AI button,
+    inline-edit mode indicator, and the autosave stub). Phase 6
+    flipped all four stubs to live behavior. This test guards the
+    flip — if `data-phase6="true"` ever reappears on
+    DocumentOverlay.jsx, a regression has snuck the read-only
+    stubs back in.
     """
     src = open("/app/frontend/src/components/work_studio/overlay/DocumentOverlay.jsx").read()
-    # Three occurrences total — one per stubbed surface.
     n = src.count('data-phase6="true"')
-    assert n >= 3, (
-        f'Expected ≥3 `data-phase6="true"` attributes on stubbed '
-        f"Phase-6 surfaces; got {n}."
+    assert n == 0, (
+        f'Phase 6 RESTORATION — no `data-phase6="true"` attributes '
+        f"may remain on DocumentOverlay.jsx; found {n}. The four "
+        f"stubbed surfaces (Edit toggle, mode indicator, Revise-with-AI "
+        f"button, autosave) must be live."
     )
-    # Each stubbed surface must also have a tooltip pointing at Phase 6.
-    assert "Phase 6" in src, "Stubbed surfaces must carry a `Phase 6` tooltip"
+    # Phase 6 restoration markers — at least one Phase 6 banner
+    # comment must remain to anchor the restoration intent.
+    assert "Phase 6" in src, (
+        "Expected a `Track A Phase 6` provenance comment to remain "
+        "as an anchor for the restoration work."
+    )
 
 
 # ── 12. PDF inline render path (Tightening 4) ────────────────────

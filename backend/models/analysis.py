@@ -109,12 +109,17 @@ class Analysis(BaseModel):
     # Track A Phase 3 (2026-06-04) — Solva narration output. Populated
     # by POST /v2/analyses/{aid}/synthesize. `cache_key` enables
     # idempotency on re-call.
+    # Track A Phase 6 (2026-06-04) — top-level `narration` + `notes`
+    # BC mirror fields REMOVED from the persisted shape. `runs[-1]`
+    # holds the canonical narration; `notes_history[]` holds the
+    # canonical notes. Both arrays are pushed dynamically via Mongo
+    # `$push` in the relevant endpoint handlers, not seeded by
+    # `model_dump()`. FE consumers migrated to read the array
+    # shapes directly.
     headline: str = Field(default="", max_length=400)
-    narration: Optional[Dict[str, Any]] = Field(default=None)
 
     sources: List[AnalysisSource] = Field(default_factory=list)
     observations: List[AnalysisObservation] = Field(default_factory=list)
-    notes: List[AnalysisNote] = Field(default_factory=list)
     refresh_history: List[AnalysisRefreshEntry] = Field(default_factory=list)
 
     status: Literal["draft", "ready", "purged"] = "draft"

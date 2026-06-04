@@ -88,6 +88,15 @@ export default function DocumentOverlay({ contextId, artefactId, open, onClose }
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
 
+  // Track A Phase 6 (2026-06-04) — save-on-close belt.
+  // DocumentSurface installs its `handleSaveNow` into this ref when
+  // the editor is mounted + edit mode is active + the doc isn't a
+  // legacy read-only artefact. handleCloseWithSave below awaits it
+  // before calling onClose, so a user who closes the overlay mid-
+  // edit doesn't lose the last <30s worth of changes that the
+  // autosave loop hasn't yet flushed.
+  const saveBeltRef = useRef(null);
+
   // Load + reload helper
   const loadDoc = useCallback(async () => {
     if (!contextId || !artefactId) return;
@@ -112,13 +121,32 @@ export default function DocumentOverlay({ contextId, artefactId, open, onClose }
     if (doc?.lifecycle_state === "committed") setEditMode(false);
   }, [doc?.lifecycle_state]);
 
+  // Track A Phase 6 — best-effort save-on-close. If the belt save
+  // throws, surface the error toast + proceed with close (do NOT
+  // block the user from closing the overlay). The 30s autosave is
+  // the primary belt; this is the safety net for the tail edits
+  // that haven't yet hit the autosave window. Logs with
+  // console.error (Guard Rail 2 — no silent except-swallow).
+  const handleCloseWithSave = useCallback(async () => {
+    if (editMode && saveBeltRef.current) {
+      try {
+        await saveBeltRef.current({ silent: true });
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error("[DocumentOverlay] save-on-close failed:", e);
+        toast.error("Couldn't save before close — content may be lost.");
+      }
+    }
+    onClose();
+  }, [editMode, onClose]);
+
   if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/35 backdrop-blur-[2px]"
       data-testid="document-overlay-root"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => { if (e.target === e.currentTarget) handleCloseWithSave(); }}
     >
       {/* Overlay container — near-full-screen but not edge-to-edge, so the
           dim of the page-behind reads (per QA-029). */}
@@ -148,7 +176,7 @@ export default function DocumentOverlay({ contextId, artefactId, open, onClose }
             <Toolbar
               doc={doc}
               editMode={editMode}
-              onClose={onClose}
+              onClose={handleCloseWithSave}
               onToggleEdit={() => setEditMode((v) => !v)}
               onShowVersions={() => setVersionsOpen(true)}
               onCommit={() => setCommitOpen(true)}
@@ -242,6 +270,7 @@ export default function DocumentOverlay({ contextId, artefactId, open, onClose }
               artefactId={artefactId}
               onSaved={(updatedDoc) => setDoc(updatedDoc)}
               onOpenRevise={() => setRevising(true)}
+              saveBeltRef={saveBeltRef}
             />
 
             {/* AI Revision side panel — slides in alongside (-034) */}
@@ -427,18 +456,23 @@ function Toolbar({
                 Move to review
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onToggleEdit}
-              disabled
-              data-phase6="true"
-              className="rounded-sm text-[12px] border-[var(--rule)] hover:border-[var(--ink)] opacity-60 cursor-not-allowed"
-              data-testid="document-overlay-edit-toggle"
-              title="Inline edit ships in Phase 6"
-            >
-              {editMode ? (<><Eye className="w-3.5 h-3.5 mr-1" /> Read mode</>) : (<><Pencil className="w-3.5 h-3.5 mr-1" /> Edit</>)}
-            </Button>
+            {/* Track A Phase 6 (2026-06-04) — inline edit toggle now
+                live for DOCX/PPTX (HIDDEN for PDF, mirror of the
+                Revise-with-AI guard at L815). PDFs render the same
+                structured HTML but don't have a meaningful inline
+                edit model — round-tripping edits back to a PDF
+                pseudo-transcription would mislead the user. */}
+            {doc.output_format !== "pdf" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onToggleEdit}
+                className="rounded-sm text-[12px] border-[var(--rule)] hover:border-[var(--ink)]"
+                data-testid="document-overlay-edit-toggle"
+              >
+                {editMode ? (<><Eye className="w-3.5 h-3.5 mr-1" /> Read mode</>) : (<><Pencil className="w-3.5 h-3.5 mr-1" /> Edit</>)}
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={onCommit}
@@ -643,7 +677,7 @@ function IntelligenceModal({ open, onClose, report }) {
 // 30s autosave when in edit mode (Draft/InReview only).
 // ─────────────────────────────────────────────────────────────────────
 function DocumentSurface({
-  doc, editMode, setEditMode, contextId, artefactId, onSaved, onOpenRevise,
+  doc, editMode, setEditMode, contextId, artefactId, onSaved, onOpenRevise, saveBeltRef,
 }) {
   const isCommitted = doc.lifecycle_state === "committed";
   const isLegacyReadOnly = isCommitted || doc.legacy;
@@ -671,12 +705,12 @@ function DocumentSurface({
   const editor = useEditor({
     extensions: [StarterKit],
     content: initialHtml,
-    // Track A Phase 5 (2026-06-04) — locked to read-only for the
-    // Document Review Side Drawer surface; inline edit re-enables
-    // in Phase 6. The toolbar's Edit button is disabled (data-phase6=
-    // true) and the secondary-toolbar "Inline edit on" indicator is
-    // a stub. Phase 5 = read-only render of DOCX/PPTX HTML; PDFs
-    // use an iframe instead (rendered outside this surface).
+    // Track A Phase 6 (2026-06-04) — inline edit RESTORED. The editor
+    // is now editable when the user has toggled Edit mode AND the
+    // doc isn't a legacy read-only artefact (committed / legacy
+    // flag). Save path = 30s autosave loop at L711-728 + manual
+    // Save button at L796-804 + save-on-close belt at the overlay
+    // close handler (onClose at L121).
     editable: false,
     editorProps: {
       attributes: {
@@ -686,11 +720,13 @@ function DocumentSurface({
     },
   });
 
-  // Track A Phase 5 (2026-06-04) — editor stays in read-only mode
-  // regardless of the editMode flag (the toolbar button is disabled).
-  // Phase 6 will restore: `editor.setEditable(editMode && !isLegacyReadOnly);`.
+  // Track A Phase 6 (2026-06-04) — restored canonical setEditable
+  // wiring per the Phase 5 inline comment: `editor.setEditable(
+  // editMode && !isLegacyReadOnly)`. PDF carve-out lives at the
+  // toolbar Edit button (L430-441) — when the user can't see the
+  // toggle the editMode flag never flips true here.
   useEffect(() => {
-    if (editor) editor.setEditable(false);
+    if (editor) editor.setEditable(editMode && !isLegacyReadOnly);
   }, [editor, editMode, isLegacyReadOnly]);
 
   // Reload content when the doc identity changes (Create New Version, etc.)
@@ -729,7 +765,7 @@ function DocumentSurface({
     return () => clearInterval(autosaveTimer.current);
   }, [editor, editMode, isLegacyReadOnly, contextId, artefactId]);
 
-  const handleSaveNow = useCallback(async () => {
+  const handleSaveNow = useCallback(async ({ silent = false } = {}) => {
     if (!editor || isLegacyReadOnly) return;
     try {
       const structured = htmlToStructuredContent(editor.getHTML());
@@ -739,14 +775,34 @@ function DocumentSurface({
       );
       await api.post(
         `/contexts/${contextId}/work-studio/documents/${artefactId}/save`,
-        { label: null },
+        { label: silent ? "Auto-save (on close)" : null },
       );
-      toast.success("Saved.");
+      if (!silent) toast.success("Saved.");
       onSaved && onSaved(data);
     } catch (e) {
+      // Phase 6 — silent saves (autosave / on-close) MUST re-raise so
+      // the parent's save-belt promise rejects cleanly. The on-close
+      // path then surfaces a toast; the user-initiated Save path
+      // surfaces here as `toast.error`.
+      if (silent) throw e;
       toast.error(apiErrorMessage(e, "Couldn't save."));
     }
   }, [editor, isLegacyReadOnly, contextId, artefactId, onSaved]);
+
+  // Track A Phase 6 (2026-06-04) — expose the save function to the
+  // DocumentOverlay parent via the saveBeltRef so the on-close
+  // belt can flush the tail edits the 30s autosave hasn't reached.
+  // The ref is only populated when the editor is in a saveable
+  // state; the parent's belt is a no-op otherwise.
+  useEffect(() => {
+    if (!saveBeltRef) return undefined;
+    if (editor && editMode && !isLegacyReadOnly) {
+      saveBeltRef.current = handleSaveNow;
+    } else {
+      saveBeltRef.current = null;
+    }
+    return () => { saveBeltRef.current = null; };
+  }, [saveBeltRef, editor, editMode, isLegacyReadOnly, handleSaveNow]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-white">
@@ -764,11 +820,9 @@ function DocumentSurface({
           <>
             <span
               data-testid="document-overlay-surface-mode-indicator"
-              data-phase6="true"
-              className="text-[var(--muted)] italic"
-              title="Inline edit ships in Phase 6"
+              className={`italic ${editMode ? "text-emerald-700" : "text-[var(--muted)]"}`}
             >
-              Inline edit on — Phase 6
+              {editMode ? "Inline edit on — autosaving every 30s" : "Read mode"}
             </span>
             <div className="ml-auto flex items-center gap-1.5">
               {editor && editMode && (
@@ -804,19 +858,19 @@ function DocumentSurface({
                   </button>
                 </>
               )}
-              {/* Track A Phase 5 (2026-06-04) — Revise-with-AI is
-                  stubbed in Phase 5 (re-enables in Phase 6 with the
-                  diff-view panel). HIDDEN entirely for PDF
-                  output_format per QA spec; DISABLED everywhere
-                  else with the Phase 6 tooltip. */}
+              {/* Track A Phase 6 (2026-06-04) — Revise-with-AI RESTORED.
+                  Onclick wires to onOpenRevise (already plumbed at
+                  DocumentOverlay L244 via setRevising(true)). HIDDEN
+                  for PDF output_format per QA spec — see L437 sibling
+                  guard on the Edit toggle. AIRevisionPanel at L877
+                  handles the full diff + accept/reject flow. */}
               {doc.output_format !== "pdf" && (
                 <button
                   type="button"
-                  onClick={() => {}}
-                  disabled
-                  data-phase6="true"
-                  title="Revise with AI ships in Phase 6"
-                  className="flex items-center gap-1 px-2 py-1 hover:bg-[var(--cream-deep)] rounded opacity-40 cursor-not-allowed"
+                  onClick={onOpenRevise}
+                  disabled={!editMode}
+                  title={editMode ? "Open Revise-with-AI panel" : "Switch to Edit mode to revise"}
+                  className="flex items-center gap-1 px-2 py-1 hover:bg-[var(--cream-deep)] rounded disabled:opacity-40 disabled:cursor-not-allowed"
                   data-testid="document-overlay-surface-revise-btn"
                 >
                   <Wand2 className="w-3.5 h-3.5" strokeWidth={1.6} />

@@ -34,7 +34,7 @@ Verbatim, dated:
 
 **Reconciliation note (2026-06-03):** The previous Section 3 was a prior agent's 8-cluster aggregation. This section is rebuilt verbatim against the three QA docs the user uploaded (`Onboarding Journey QA`, `Task Manager QA`, `Google Login + Doc Reader + Calendar + Open Questions QA`, all dated 2nd June 2026). The audit memo at `sprints/MASTER_STATE_RECONCILIATION_2026-06-03.md` documents the divergences uncovered.
 
-**Total items across 3 QA docs: 37. ✅ 31 · 🟡 0 · ❌ 4 · 🚧 2 · ❔ 0.** (Plus Bug #30 ✅, plus Track A Phase 4 ✅ 2026-06-04, plus Track A Phase 5 ✅ 2026-06-04, plus 2 new bugs `BUG-ANL-001` ✅ 2026-06-04 + `BUG-ANL-002` ✅ 2026-06-04 logged & fixed in Section 5b.)
+**Total items across 3 QA docs: 37. ✅ 31 · 🟡 0 · ❌ 4 · 🚧 2 · ❔ 0.** (Plus Bug #30 ✅, plus Track A Phase 4 ✅ 2026-06-04, plus Track A Phase 5 ✅ 2026-06-04, plus Track A Phase 6 ✅ 2026-06-04, plus 2 new bugs `BUG-ANL-001` ✅ 2026-06-04 + `BUG-ANL-002` ✅ 2026-06-04 logged & fixed in Section 5b.)
 
 Status legend:
 - ✅ SHIPPED — code change verified; tester journey-completion passed
@@ -298,6 +298,10 @@ Recorded for paper trail per user direction. NOT auto-scoped. Same pattern as Ph
 
 - **`useFileInputResetOnInvoke` cross-cutting hook** (BUG-ANL-002 follow-up, proposed 2026-06-04, **DECLINED** same dispatch). Would wrap `ref.click()` to guarantee `input.value=""` before every file picker invocation across the entire FE. Current state: `AnalyzeJournal.jsx` fixed via `finally` block; `Documents/UploadModal` already clears on close. No further surfaces have the bug. The hook would close a class of bugs but no other surface has the symptom today.
 
+### Future dedicated phase (DEFERRED, awaiting Pre-Read scoping)
+
+- **Confidence scoring runtime compute path** (Phase 6 iter-0 step 0 archaeology, 2026-06-04). Ground-truth read showed `intelligence_report.confidence_pct` is only set by `scripts/seed_chunks.py:64-160` for demo/seed payloads. Real Work Studio docs compiled via Enhance/Compile ship with `confidence_pct: None` — there is NO production runtime scorer to extend. Building one in Phase 6 would have been greenfield LLM prompt work (rubric design + integration test budget) outside the restoration scope. **Deferred to a future dedicated phase** with its own Pre-Read (rubric design, scoring axes, integration test count budget, real-LLM call cost model). NOT auto-scoped; awaiting user dispatch.
+
 ### Section 5b — New open bugs (logged, NOT auto-fixed)
 
 - **BUG-ANL-002 — Analyze upload picker silent-failure on file selection** → ✅ COMPLETE 2026-06-04T21:30:00Z (single-dispatch surgical fix, iter 1 of 1).
@@ -329,30 +333,33 @@ Recorded for paper trail per user direction. NOT auto-scoped. Same pattern as Ph
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T21:30:00Z (BUG-ANL-002 fixed in one surgical dispatch — `AnalyzeJournal.jsx` `finally`-block clear of `input.value` after every upload attempt; 2 diagnostic Playwright scripts + 1 lockdown Playwright script all green on live preview).
-- **Agent:** bug-anl-002-upload-silent-failure.
-- **Mode:** Single-file FE fix, no backend change, no new dependencies. Evidence: `/tmp/bug_anl_002_diagnose.py` (happy-path works) + `/tmp/bug_anl_002_confirm_stale_input.py` (silent-retry root cause: `change_log=[]` on same-file re-pick after failure + `input.value` stuck at picked filename) + `/tmp/bug_anl_002_upload_journey.py` (post-fix 8/8 assertions PASS including the critical `B3_finally_cleared_after_failure` and `C1_retry_same_file_fired_change`). Memo: `sprints/BUG_ANL_002_ANALYZE_UPLOAD_SILENT_FAILURE.md`.
-- **Counts after BUG-ANL-002 close:** ✅31 / 🟡0 / ❌4 / 🚧2 across the original 37 QA items (unchanged). Plus Bug #30 ✅ + Track A Phase 4 ✅ + Track A Phase 5 ✅ + BUG-ANL-001 ✅ + BUG-ANL-002 ✅. **0 new open bugs.**
+- **Written:** 2026-06-04T22:30:00Z (Track A Phase 6 fixed in one iter-1 dispatch after iter-0 step 0 stop-and-surface — restoration of 4 disable points in `DocumentOverlay.jsx`, save-on-close belt with await + console.error + toast.error + proceed-with-close, BC mirror removal end-to-end on `analyses` collection writes + API responses + 4 test migrations, 1 new Phase 6 lockdown file with 10 default + 2 integration-marked tests, 3 Playwright lockdowns in `/tmp/`).
+- **Agent:** track-a-phase-6-inline-edit-revise-bc-removal.
+- **Mode:** 4 files touched FE/BE + 4 test migrations + 1 new lockdown file + 3 Playwright. Net ~80 LOC delta. Confidence recompute on commit DEFERRED per user A=(b) decision after iter-0 archaeology showed no production scoring path exists. Memo: `sprints/TRACK_A_PHASE_6_INLINE_EDIT_REVISE_AND_BC_REMOVAL.md`.
+- **Counts after Phase 6 close:** ✅31 / 🟡0 / ❌4 / 🚧2 across the original 37 QA items (unchanged). Plus Bug #30 ✅ + Track A Phase 4 ✅ + Track A Phase 5 ✅ + Track A Phase 6 ✅ + BUG-ANL-001 ✅ + BUG-ANL-002 ✅. **0 new open bugs.**
 
 ---
 
-## Section 8 — Cumulative Health Snapshot (2026-06-04 21:30Z BUG-ANL-002 close)
+## Section 8 — Cumulative Health Snapshot (2026-06-04 22:30Z Track A Phase 6 close)
 
-- ✅ **11 phases shipped + verified**: Track A Phase 1 + 2 + 3 + 4 + 5, Track B B1 (incl. B1b) + B2 + B3 + B4 + B5.
+- ✅ **12 phases shipped + verified**: Track A Phase 1 + 2 + 3 + 4 + 5 + 6, Track B B1 (incl. B1b) + B2 + B3 + B4 + B5.
 - ✅ **2 standalone bugs closed**: BUG-ANL-001 Analyze Journal route guard + BUG-ANL-002 Analyze upload silent-failure on same-file retry.
 - 🟡 **0 phases pending tester.**
 - ❌ **4 ❌ open items** across the 3 QA docs (unchanged).
 - 🟠 **0 new open bugs.**
 - 🚧 **2 USER-BLOCKED items unchanged:** SendGrid Inbound Parse webhook config (TM3), Google GCP OAuth creds (G2).
-- ✅ **v1 byte-identical guard intact** (2/2 across all 11 phases).
-- ✅ **Phase 5 lockdown sweep 14/14 PASS** (+ 1 integration-marked deselected).
-- ✅ **Aggregate regression sweep 69/69 PASS** (Phase 5 iter-1 + iter-2 + Phase 4 + Phase 3 + v1 guard + engagement revival).
+- 🛌 **1 deferred future phase:** Confidence scoring runtime compute path (Phase 6 iter-0 archaeology) — no production scorer exists today; awaiting dedicated Pre-Read.
+- ✅ **v1 byte-identical guard intact** (2/2 across all 12 phases).
+- ✅ **Phase 6 lockdown sweep 10/10 default + 2 integration-marked PASS** (`test_track_a_phase6_inline_edit_and_bc_removal.py`).
+- ✅ **Phase 6 Playwright lockdown 15/15 assertions PASS** (`/tmp/phase6_inline_edit_journey.py` 6/6 + `/tmp/phase6_save_on_close.py` 3/3 + `/tmp/phase6_revise_with_ai_journey.py` 6/6).
+- ✅ **Aggregate BE regression sweep 73/73 PASS** (Phase 6 + Phase 5 + Phase 4 + Phase 3 + v1 guard + Chunk 8 except 1 pre-existing rag_band regression unrelated to Phase 6).
+- ✅ **Phase 5 inverted-stub-flag test PASS** (`test_phase5_phase6_stub_flags_persist` now asserts `data-phase6` count == 0; was ≥ 3 pre-Phase-6).
 - ✅ **BUG-ANL-002 lockdown 8/8 PASS** (`/tmp/bug_anl_002_upload_journey.py` against live preview).
-- ✅ **Phase 6 deferral surfaces verified reachable** in source at `DocumentOverlay.jsx` lines 435 / 767 / 817; PDF hides Revise-with-AI via JSX conditional.
 - ✅ **Voice-lint clean** across customer-copy surfaces.
 - ✅ **ESLint clean** on every file touched.
-- ✅ **Ruff clean** on all backend files touched during Phase 5.
+- ✅ **Ruff clean** on all backend files touched during Phase 6.
+- 📝 **Pre-existing chunk8 rag_band regression** (`rag_band(79)` expected "amber" but actual "green") — surfaced via `git stash` verification as unrelated to any Phase 6 change. NOT a Phase 6 regression. Logged in Phase 6 memo for next dedicated dispatch.
 
 ---
 
-**Paused per orchestrator instruction.** NOT auto-starting Phase 6 / any backlog hygiene pass / any sibling-route guard generalisation. The minutes-template polish proposal from the Phase 5 iter-2 finish summary remains **DECLINED as gold-plating**. User decides next dispatch — per the BUG-ANL-002 close-out brief, the Phase 6 Pre-Read (inline DOCX edit / inline PPTX edit / Revise-with-AI diff panel — surfaces stubbed at `DocumentOverlay.jsx` lines 435 / 767 / 817) is the locked next dispatch when the user lands the formal brief. Holding for that signal.
+**Paused per orchestrator instruction.** NOT auto-starting any backlog hygiene pass / sibling-route guard generalisation / confidence scoring runtime path / unrelated chunk8 rag_band regression debug. The minutes-template polish proposal from the Phase 5 iter-2 finish summary remains **DECLINED as gold-plating**, and the `useFileInputResetOnInvoke` cross-cutting hook from BUG-ANL-002 follow-up also remains DECLINED. User decides next dispatch — likely candidates: (a) confidence scoring Pre-Read dispatch, (b) chunk8 rag_band regression triage, (c) SendGrid TM3 / GCP G2 unblock when creds land. Holding for that signal.

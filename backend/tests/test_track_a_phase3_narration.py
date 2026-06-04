@@ -355,11 +355,16 @@ async def test_phase_1_and_2_regressions_still_pass(transport, monkeypatch):
             assert r.status_code == 200
             assert r.content[:4] == b"PK\x03\x04"
         # Read picks up everything.
+        # Phase 6 — top-level `notes` BC mirror REMOVED from API
+        # response; consumers read `notes_history[]` directly.
         r = await ac.get(f"/api/workbook/v2/analyses/{aid}", headers=admin)
         body = r.json()
         assert body["headline"] == "Reg passed."
         assert body["objective"] == "Why?"
-        assert len(body["notes"]) >= 1
+        assert len(body["notes_history"]) >= 1
+        assert "notes" not in body
+        assert "notes_updated_at" not in body
+        assert "narration" not in body
 
 
 # ─── Test 9 — voice-lint drops banned-voice observations ───────

@@ -88,6 +88,26 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Track A Phase 6 (2026-06-04) — BC mirror response sanitizer.
+# Phase 4 wrote top-level `narration`, `notes`, `notes_updated_at`
+# on the analyses row as BC mirrors for the FE; Phase 6 drops the
+# writes AND strips them from API responses so legacy rows
+# (synthesized before Phase 6) don't surface deprecated shapes to
+# FE clients that have migrated to `runs[-1]` / `notes_history[]`.
+# Per the user's BC-removal contract: "DB writes drop, API response
+# shape drops, tests migrate. No derived BC field on the API as a
+# fallback." We strip on read instead of derive on read.
+_PHASE6_BC_MIRRORS = ("narration", "notes", "notes_updated_at")
+
+
+def _strip_phase6_bc_mirrors(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not row:
+        return row
+    for key in _PHASE6_BC_MIRRORS:
+        row.pop(key, None)
+    return row
+
+
 # ─────────────────────────────────────────────────────────────────
 # In-memory blob cache: parsed-matrix lookups can re-read the
 # blob on demand. The cache is per-process; on a worker restart
@@ -711,14 +731,19 @@ async def upload_workbook_multi(
 @router.get("/v2/analyses/{aid}")
 async def get_analysis_v2(aid: str, current: Dict[str, Any] = Depends(get_current_account)):
     """Read endpoint for the new `Analysis` entity. Tenant-scoped:
-    cross-tenant returns 404 (no existence leak)."""
+    cross-tenant returns 404 (no existence leak).
+
+    Track A Phase 6 (2026-06-04) — strips legacy top-level BC mirror
+    fields (`narration`, `notes`, `notes_updated_at`) from the
+    response so callers must consume `runs[-1]` / `notes_history[]`.
+    """
     row = await db.analyses.find_one(
         {"id": aid, "account_id": current["id"]},
         {"_id": 0},
     )
     if not row:
         raise HTTPException(404, "analysis_not_found")
-    return row
+    return _strip_phase6_bc_mirrors(row)
 
 @router.post("/v2/analyses/{aid}/synthesize")
 async def synthesize_v2_endpoint(
@@ -750,21 +775,40 @@ async def synthesize_v2_endpoint(
     ).to_list(length=None)
     if not blobs:
         # Sources purged on session-close → no fabrication.
-        update = {
-            "narration": {
-                "headline": "",
-                "observations": [],
-                "citations": [],
-                "cache_key": "",
-                "refused": True,
-                "refusal_reason": "sources_purged",
-            },
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+        # Track A Phase 6 (2026-06-04) — top-level `narration` BC
+        # mirror removed. The refusal payload is appended to runs[]
+        # as a refusal run; the response shape stays unchanged for
+        # the API caller (still a narration dict).
+        refusal_narration = {
+            "headline": "",
+            "observations": [],
+            "citations": [],
+            "cache_key": "",
+            "refused": True,
+            "refusal_reason": "sources_purged",
+        }
+        now_iso = datetime.now(timezone.utc).isoformat()
+        refusal_run = {
+            "run_id":                  "run-" + uuid.uuid4().hex[:12],
+            "created_at":              now_iso,
+            "triggered_by_account_id": current["id"],
+            "headline":                "",
+            "observations":            [],
+            "citations":               [],
+            "forecast_meta":           None,
+            "cache_key":               "",
+            "refused":                 True,
+            "refusal_reason":          "sources_purged",
+            "source_files":            row.get("source_files") or [],
         }
         await db.analyses.update_one(
-            {"id": aid, "account_id": current["id"]}, {"$set": update},
+            {"id": aid, "account_id": current["id"]},
+            {
+                "$set":  {"updated_at": now_iso},
+                "$push": {"runs": refusal_run},
+            },
         )
-        return update["narration"]
+        return refusal_narration
 
     # Track A Phase 4 (2026-06-04) — multi-workbook synthesis.
     #
@@ -1017,17 +1061,34 @@ async def synthesize_v2_endpoint(
             "source_files": sources_for_prompt,
         }
 
+    # Track A Phase 6 (2026-06-04) — cache hint sourced from runs[-1]
+    # canonical shape (NOT the dropped top-level `narration` mirror).
+    # Legacy rows still have top-level `narration` in the DB but we
+    # consume the runs[] array — runs[-1] is the synthesizer-written
+    # canonical narration shape (since Phase 4) with the cache_key
+    # field intact.
+    _prev_runs = row.get("runs") or []
+    cached_narration: Optional[Dict[str, Any]] = None
+    if _prev_runs:
+        _last = _prev_runs[-1]
+        cached_narration = {
+            "headline":      _last.get("headline", ""),
+            "observations":  _last.get("observations") or [],
+            "citations":     _last.get("citations") or [],
+            "forecast_meta": _last.get("forecast_meta"),
+            "cache_key":     _last.get("cache_key"),
+        }
+
     narration = await narrate_analysis(
         workbook_analysis=wba,
         account_id=current["id"],
         objective=row.get("objective", ""),
-        cached=row.get("narration"),
+        cached=cached_narration,
         workbook_context=workbook_context_for_prompt,
         forecast_meta=forecast_meta_for_prompt,
     )
 
     update_set: Dict[str, Any] = {
-        "narration":  narration,
         "headline":   narration.get("headline", ""),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -1048,10 +1109,10 @@ async def synthesize_v2_endpoint(
     # Track A Phase 4 (2026-06-04) — append-only `runs[]` history.
     # Each synthesize call appends a new run UNLESS the latest run's
     # cache_key matches (idempotent re-synthesize on unchanged data).
-    # Top-level `narration` is retained as a BC mirror for FE
-    # consumers; the latest entry of `runs` is the source of truth.
-    # `narration` mirror removal scheduled for Phase 5 — see
-    # MASTER_STATE Section 4.
+    # Track A Phase 6 (2026-06-04) — top-level `narration` BC mirror
+    # REMOVED. `runs[-1]` is the canonical source. FE consumers (1
+    # consumer: AnalyzeDrawer.jsx:401) migrated to read
+    # `runs[runs.length-1].partial_narration_missing_forecast_low_signal`.
     existing_runs: List[Dict[str, Any]] = row.get("runs") or []
     latest_cache_key = (existing_runs[-1].get("cache_key") if existing_runs else None)
     new_cache_key = narration.get("cache_key")
@@ -1077,7 +1138,8 @@ async def synthesize_v2_endpoint(
             {"$set": update_set, "$push": {"runs": new_run}},
         )
     else:
-        # Same content hash → no new run; just refresh the BC mirror.
+        # Same content hash → no new run; just refresh the headline +
+        # updated_at on the top-level row (no narration BC mirror).
         await db.analyses.update_one(
             {"id": aid, "account_id": current["id"]}, {"$set": update_set},
         )
@@ -1159,7 +1221,7 @@ async def list_analyses_v2(
             "objective": r.get("objective", ""),
             "source_count": len(r.get("sources") or []),
             "observation_count": len(r.get("observations") or []),
-            "note_count": len(r.get("notes_history") or r.get("notes") or []),
+            "note_count": len(r.get("notes_history") or []),
             "created_at": r.get("created_at"),
             "updated_at": r.get("updated_at"),
         })
@@ -1192,7 +1254,7 @@ async def patch_analysis_objective(
         {"id": aid, "account_id": current["id"]},
         {"_id": 0},
     )
-    return fresh
+    return _strip_phase6_bc_mirrors(fresh)
 
 
 @router.post("/v2/analyses/{aid}/notes")
@@ -1242,14 +1304,17 @@ async def post_analysis_note(
         "created_at": datetime.now(timezone.utc).isoformat(),
         "author_account_id": current["id"],
     }
+    # Track A Phase 6 (2026-06-04) — top-level `notes` + `notes_updated_at`
+    # BC mirrors REMOVED. `notes_history[-1]` is the canonical source.
+    # FE consumers (AnalyzeDrawer.jsx:329,333) migrated to read
+    # `notes_history` directly with no fallback. Tests migrated per
+    # Tightening 3 (see test_track_a_phase4_*.py + test_track_a_phase3_narration.py).
     await db.analyses.update_one(
         {"id": aid, "account_id": current["id"]},
         {
             "$push": {"notes_history": note},
             "$set": {
-                "notes":            body.body,           # BC mirror — `""` on delete
-                "notes_updated_at": note["created_at"],  # BC mirror
-                "updated_at":       note["created_at"],
+                "updated_at": note["created_at"],
             },
         },
     )
