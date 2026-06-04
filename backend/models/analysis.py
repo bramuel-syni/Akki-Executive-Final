@@ -97,6 +97,11 @@ class Analysis(BaseModel):
     context_id: str  # REQUIRED per spec (vs. optional on WorkbookAnalysis)
     title: str = Field(..., min_length=1, max_length=200)
 
+    # Track A Phase 2 (2026-06-04) — objective text captured at the
+    # top of the drawer. NOT a chat thread (D4 — chats live in chats).
+    # Used as narration context by Solva v2 in Phase 3.
+    objective: str = Field(default="", max_length=4000)
+
     sources: List[AnalysisSource] = Field(default_factory=list)
     observations: List[AnalysisObservation] = Field(default_factory=list)
     notes: List[AnalysisNote] = Field(default_factory=list)

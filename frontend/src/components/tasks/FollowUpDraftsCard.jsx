@@ -110,7 +110,16 @@ export default function FollowUpDraftsCard({ contextId, refreshKey }) {
       <footer className="px-3 py-2 border-t border-[var(--rule)] bg-[var(--cream-deep)]/40">
         <button
           type="button"
-          onClick={() => navigate("/app/work-studio?kind=drafts")}
+          /* Track B Phase B2 (2026-06-04) — TM5 re-wire.
+           * QA Task Manager doc item 5 (verbatim): "I think the
+           * button should open a page that shows Follow Up Emails
+           * drafted by Akki to contributors with pending
+           * contributions." The canonical such page is
+           * /app/cycle/drafts (`CycleDraftJournal`, App.js:141-144),
+           * whose own header reads: "lists every agent-cycle-drafted
+           * follow-up email across all active cycles in this
+           * context." That is the verbatim QA target. */
+          onClick={() => navigate("/app/cycle/drafts")}
           className="text-[11.5px] text-[var(--deep)] hover:text-[var(--ink)] inline-flex items-center gap-1 transition-colors"
           data-testid="follow-up-drafts-view-more"
         >

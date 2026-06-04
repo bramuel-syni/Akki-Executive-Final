@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import (
-    APIRouter, Depends, File, Form, HTTPException, Response,
+    APIRouter, Depends, File, Form, HTTPException, Query, Response,
     UploadFile,
 )
 from pydantic import BaseModel, Field
@@ -642,11 +642,15 @@ async def upload_workbook_multi(
     files: List[UploadFile] = File(..., description="One or more xlsx/csv files"),
     title: Optional[str] = Form(None),
     context_id: Optional[str] = Form(None),
+    objective: Optional[str] = Form(None),
     current: Dict[str, Any] = Depends(get_current_account),
 ):
     """Multi-file upload → creates ONE `Analysis` row with N source
     refs. Per Pre-Read: accepts 1+ files in one request; 250MB cap
-    PER FILE."""
+    PER FILE.
+
+    Track A Phase 2 (2026-06-04) — accepts an optional `objective`
+    text that is captured at the top of the Analyze drawer."""
     if not files:
         raise HTTPException(400, "at_least_one_file_required")
 
@@ -684,6 +688,7 @@ async def upload_workbook_multi(
         context_id=ctx,
         title=display_title,
         files=accepted,
+        objective=(objective or "").strip(),
     )
     await db.analyses.insert_one(analysis.model_dump())
     if blob_docs:
@@ -694,6 +699,7 @@ async def upload_workbook_multi(
         "status": analysis.status,
         "title": analysis.title,
         "context_id": analysis.context_id,
+        "objective": analysis.objective,
         "sources": [s.model_dump() for s in analysis.sources],
     }
 
@@ -730,6 +736,114 @@ async def session_close_endpoint(
         context_id=row["context_id"],
     )
     return result
+
+
+# ─────────────────────────────────────────────────────────────────
+# Track A Phase 2 (2026-06-04) — listing + objective + notes
+# endpoints for the Analyze Journal surface.
+# ─────────────────────────────────────────────────────────────────
+
+
+class _AnalysisObjectivePatch(BaseModel):
+    """Body schema for `PATCH /v2/analyses/{aid}/objective`."""
+    objective: str = Field(..., max_length=4000)
+
+
+class _AnalysisNoteIn(BaseModel):
+    """Body schema for `POST /v2/analyses/{aid}/notes`."""
+    body: str = Field(..., min_length=1, max_length=4000)
+
+
+@router.get("/v2/analyses")
+async def list_analyses_v2(
+    context_id: Optional[str] = Query(None),
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """List the current account's Analyses. Tenant-scoped via
+    `account_id`. Optional `context_id` filter for the in-context
+    journal view."""
+    q: Dict[str, Any] = {"account_id": current["id"]}
+    if context_id:
+        q["context_id"] = context_id
+    rows = await db.analyses.find(
+        q, {"_id": 0},
+    ).sort("updated_at", -1).to_list(length=200)
+    # Drop the raw observations/notes bodies from the listing payload
+    # — they're heavy and only needed on detail. Keep a count.
+    summarized = []
+    for r in rows:
+        summarized.append({
+            "id": r.get("id"),
+            "title": r.get("title"),
+            "context_id": r.get("context_id"),
+            "status": r.get("status"),
+            "objective": r.get("objective", ""),
+            "source_count": len(r.get("sources") or []),
+            "observation_count": len(r.get("observations") or []),
+            "note_count": len(r.get("notes") or []),
+            "created_at": r.get("created_at"),
+            "updated_at": r.get("updated_at"),
+        })
+    return summarized
+
+
+@router.patch("/v2/analyses/{aid}/objective")
+async def patch_analysis_objective(
+    aid: str,
+    body: _AnalysisObjectivePatch,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Save the drawer's "objective" text. Auto-save target; FE
+    debounces on the client side. Tenant-scoped; cross-tenant
+    returns 404."""
+    row = await db.analyses.find_one(
+        {"id": aid, "account_id": current["id"]},
+        {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(404, "analysis_not_found")
+    await db.analyses.update_one(
+        {"id": aid, "account_id": current["id"]},
+        {"$set": {
+            "objective": body.objective,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    fresh = await db.analyses.find_one(
+        {"id": aid, "account_id": current["id"]},
+        {"_id": 0},
+    )
+    return fresh
+
+
+@router.post("/v2/analyses/{aid}/notes")
+async def post_analysis_note(
+    aid: str,
+    body: _AnalysisNoteIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Append a note to the Analysis. Auto-saved; FE typically
+    sends one note per save-debounce window. Tenant-scoped."""
+    row = await db.analyses.find_one(
+        {"id": aid, "account_id": current["id"]},
+        {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(404, "analysis_not_found")
+    note = {
+        "id": "note-" + uuid.uuid4().hex[:12],
+        "body": body.body,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "author_account_id": current["id"],
+    }
+    await db.analyses.update_one(
+        {"id": aid, "account_id": current["id"]},
+        {
+            "$push": {"notes": note},
+            "$set": {"updated_at": note["created_at"]},
+        },
+    )
+    return note
 
 
 __all__ = ["router"]

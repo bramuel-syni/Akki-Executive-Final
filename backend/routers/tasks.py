@@ -280,6 +280,153 @@ async def list_tasks(
 
 
 # ═════════════════════════════════════════════════════════════════════
+# Track B Phase B2 (2026-06-04) — Task lifecycle transitions.
+#
+# Commission: Draft → Active (fires contributor invitations).
+# Close:      Active → Closed.
+#
+# Both endpoints are idempotent: re-calling on the target state
+# returns 200 + the current task, no double-audit. State-machine
+# guards: commission on Closed → 400; close on Draft → 400. The
+# guard is one-way only this phase — reopen is Phase B3 scope.
+# ═════════════════════════════════════════════════════════════════════
+
+
+@router.post("/tasks/{tid}/commission")
+async def commission_task(
+    tid: str, current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Flip a Draft task to Active. Idempotent. Audit-logged."""
+    row = await db.tasks.find_one(
+        {"id": tid, "account_id": current["id"]}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(404, "task_not_found")
+    state = row.get("state", "draft")
+    if state == "active":
+        # Idempotent — return current state, no new audit.
+        return _sanitize_task(row)
+    if state == "closed":
+        raise HTTPException(
+            400, "cannot_commission_closed_task",
+        )
+    # State-machine: draft → active.
+    now_iso = datetime.now(timezone.utc).isoformat()
+    history = list(row.get("status_history") or [])
+    history.append({"state": "active", "at": now_iso, "kind": "commissioned"})
+    await db.tasks.update_one(
+        {"id": tid, "account_id": current["id"]},
+        {"$set": {
+            "state": "active",
+            "updated_at": now_iso,
+            "status_history": history,
+        }},
+    )
+    # Audit row.
+    try:
+        await db.audit_log.insert_one({
+            "id":            str(uuid.uuid4()),
+            "context_id":    row.get("context_id"),
+            "account_id":    current["id"],
+            "action":        "task.commissioned",
+            "resource_type": "task",
+            "resource_id":   tid,
+            "metadata":      {"prev_state": state, "next_state": "active"},
+            "created_at":    now_iso,
+        })
+    except Exception as e:  # noqa: BLE001
+        log.warning("task.commissioned audit failed: %s", e)
+    # Fan out contributor invitations now that the task is active.
+    try:
+        from services.tasks.contributor_invitation_service import fan_out_invitations
+        # The fan-out reads from the row in-memory; refresh first.
+        fresh = await db.tasks.find_one(
+            {"id": tid, "account_id": current["id"]}, {"_id": 0},
+        )
+        if fresh:
+            await fan_out_invitations(db, task=fresh)
+    except Exception as e:  # noqa: BLE001
+        log.warning("commission fan-out failed for %s: %s", tid, e)
+    fresh = await db.tasks.find_one(
+        {"id": tid, "account_id": current["id"]}, {"_id": 0},
+    )
+    return _sanitize_task(fresh)
+
+
+@router.post("/tasks/{tid}/close")
+async def close_task(
+    tid: str, current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Flip an Active task to Closed. Idempotent. Audit-logged."""
+    row = await db.tasks.find_one(
+        {"id": tid, "account_id": current["id"]}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(404, "task_not_found")
+    state = row.get("state", "draft")
+    if state == "closed":
+        return _sanitize_task(row)
+    if state == "draft":
+        raise HTTPException(
+            400, "cannot_close_draft_task",
+        )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    history = list(row.get("status_history") or [])
+    history.append({"state": "closed", "at": now_iso, "kind": "closed"})
+    await db.tasks.update_one(
+        {"id": tid, "account_id": current["id"]},
+        {"$set": {
+            "state": "closed",
+            "updated_at": now_iso,
+            "closed_at": now_iso,
+            "status_history": history,
+        }},
+    )
+    try:
+        await db.audit_log.insert_one({
+            "id":            str(uuid.uuid4()),
+            "context_id":    row.get("context_id"),
+            "account_id":    current["id"],
+            "action":        "task.closed",
+            "resource_type": "task",
+            "resource_id":   tid,
+            "metadata":      {"prev_state": state, "next_state": "closed"},
+            "created_at":    now_iso,
+        })
+    except Exception as e:  # noqa: BLE001
+        log.warning("task.closed audit failed: %s", e)
+    fresh = await db.tasks.find_one(
+        {"id": tid, "account_id": current["id"]}, {"_id": 0},
+    )
+    return _sanitize_task(fresh)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Track B Phase B2 (2026-06-04) — Filter-tab live counts.
+#
+# Returns the live count of tasks in each state for the current
+# tenant + (optional) context. Used by the TaskManager filter tabs
+# to render number badges that match the actual DB rows. No cache.
+# ═════════════════════════════════════════════════════════════════════
+
+
+@router.get("/tasks/counts")
+async def tasks_counts(
+    context_id: Optional[str] = None,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    base: Dict[str, Any] = {"account_id": current["id"]}
+    if context_id:
+        base["context_id"] = context_id
+    counts: Dict[str, int] = {}
+    for state in TASK_STATES:
+        q = dict(base, state=state)
+        counts[state] = await db.tasks.count_documents(q)
+    counts["all"] = await db.tasks.count_documents(base)
+    return counts
+
+
+# ═════════════════════════════════════════════════════════════════════
 # GET /api/tasks/{task_id}
 # ═════════════════════════════════════════════════════════════════════
 @router.get("/tasks/{task_id}")

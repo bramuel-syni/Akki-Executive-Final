@@ -154,7 +154,7 @@ export default function TaskDrawer() {
               {tab === "intelligence"  && <IntelligenceTab  task={task} onJumpTab={setTab} />}
               {tab === "compile"       && <CompileTab       task={task} />}
             </div>
-            <FooterCTAs task={task} />
+            <FooterCTAs task={task} onPatched={reload} />
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center" data-testid="task-drawer-missing">
@@ -1486,7 +1486,7 @@ function CompileCommitPanel({ task, session, onAdvance, setParams, params }) {
 // ═════════════════════════════════════════════════════════════════════
 // Footer CTAs
 // ═════════════════════════════════════════════════════════════════════
-function FooterCTAs({ task }) {
+function FooterCTAs({ task, onPatched }) {
   const navigate = useNavigate();
   const id = encodeURIComponent(task.id);
   const buildSolva     = () => `/app/solva?ctx_type=task&ctx_id=${id}`;
@@ -1499,17 +1499,65 @@ function FooterCTAs({ task }) {
     try {
       await navigator.clipboard.writeText(url);
       toast.success("Share link copied.");
-      // Audit row via existing tasks PATCH-by-no-op pattern would require
-      // a dedicated endpoint; the audit lives implicitly via the
-      // PATCH/copy combination — F.5 will add an explicit `task.shared`
-      // audit event when the share-tracking endpoint lands.
     } catch (e) {
       toast.error("Could not copy share link.");
     }
   };
 
+  // ── Track B Phase B2 (2026-06-04) — lifecycle CTAs ──────────────
+  // Commission Draft → Active; Close Active → Closed. Idempotent on
+  // the backend. Both fire `onPatched` to refresh the drawer + parent
+  // listing so the StatusBadge and tab counts re-render.
+  const [busy, setBusy] = useState(false);
+  const onCommission = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/tasks/${task.id}/commission`);
+      toast.success("Task commissioned");
+      onPatched?.();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally { setBusy(false); }
+  };
+  const onClose = async () => {
+    if (!window.confirm(
+      "Are you sure you want to close this task? Once closed, the task will be marked as complete and cannot be reopened."
+    )) return;
+    setBusy(true);
+    try {
+      await api.post(`/tasks/${task.id}/close`);
+      toast.success("Task closed");
+      onPatched?.();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally { setBusy(false); }
+  };
+
   return (
     <footer className="px-6 py-4 border-t border-[var(--rule)] bg-[var(--parchment)] flex flex-wrap gap-2" data-testid="task-drawer-footer">
+      {task.state === "draft" && (
+        <Button
+          size="sm"
+          onClick={onCommission}
+          disabled={busy}
+          className="bg-[var(--oxblood)] hover:bg-[var(--oxblood-deep)] text-white"
+          data-testid="task-drawer-cta-commission"
+        >
+          {busy ? "…" : "Commission"}
+        </Button>
+      )}
+      {task.state === "active" && (
+        <Button
+          size="sm"
+          onClick={onClose}
+          disabled={busy}
+          variant="outline"
+          className="border-[var(--oxblood)] text-[var(--oxblood)] hover:bg-[rgba(122,46,46,0.05)]"
+          data-testid="task-drawer-cta-close"
+        >
+          {busy ? "…" : "Close"}
+        </Button>
+      )}
       <Button
         size="sm" variant="outline"
         onClick={() => navigate(buildSolva())}

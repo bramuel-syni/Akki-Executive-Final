@@ -146,7 +146,8 @@ const SharedArtefact = lazy(() => import("@/pages/SharedArtefact"));
 const InboundQueue = lazy(() => import("@/pages/InboundQueue"));
 const StudioComposerPage = lazy(() => import("@/pages/StudioComposerPage"));
 const WorkStudio = lazy(() => import("@/pages/WorkStudio"));
-const WorkStudioAnalyze = lazy(() => import("@/pages/WorkStudioAnalyze"));
+const WorkStudioAnalyze = lazy(() => import("@/pages/WorkStudioAnalyze"));  // eslint-disable-line @typescript-eslint/no-unused-vars
+const AnalyzeJournal = lazy(() => import("@/pages/AnalyzeJournal"));
 // Phase Z (2026-05-27, Z-slice-4) — Canonical Documents Journal page.
 const DocumentsPage = lazy(() => import("@/pages/DocumentsPage"));
 // Phase E.2 (2026-05-26) — full-page Recent Activity surface.
@@ -485,8 +486,13 @@ function App() {
           <Route path="/app/enterprise" element={<Gated><Enterprise /></Gated>} />
           <Route path="/app/work-studio" element={<Gated><WorkStudio /></Gated>} />
           {/* Phase P5.14 — Work Studio Analyze tab. Sibling page; does NOT
-              touch the Generate surface. */}
-          <Route path="/app/work-studio/analyze" element={<Gated><WorkStudioAnalyze /></Gated>} />
+              touch the Generate surface.
+              Track A Phase 2 (2026-06-04) — backward-compat redirect to
+              the new /app/analyze journal surface. The flat surface stays
+              accessible only as a redirect target for any deep-links. */}
+          <Route path="/app/work-studio/analyze" element={<Navigate to="/app/analyze" replace />} />
+          {/* Track A Phase 2 (2026-06-04) — Analyze Journal. */}
+          <Route path="/app/analyze" element={<Gated><AnalyzeJournal /></Gated>} />
           {/* Phase Z (2026-05-27, Z-slice-4) — Canonical Documents
               Journal. Surfaces every document organized by origin
               (Akki-generated / Uploaded / Emailed). Public route under

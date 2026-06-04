@@ -29,6 +29,7 @@ import FollowUpDraftsCard from "@/components/tasks/FollowUpDraftsCard";
 import RecentTaskActivityCard from "@/components/tasks/RecentTaskActivityCard";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function TaskManager() {
   const { activeContext } = useAuth();
@@ -41,6 +42,19 @@ export default function TaskManager() {
   const [tab, setTab] = useState(initialTab);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Track B Phase B2 (2026-06-04) — live count badges per tab.
+  // Refreshed whenever `refreshKey` bumps (drawer-driven reload) or
+  // the active context changes. No cache; one round-trip per refresh.
+  const [counts, setCounts] = useState({ active: 0, draft: 0, closed: 0 });
+  useEffect(() => {
+    let dead = false;
+    const qs = cid ? `?context_id=${encodeURIComponent(cid)}` : "";
+    api.get(`/tasks/counts${qs}`)
+      .then(({ data }) => { if (!dead) setCounts(data || {}); })
+      .catch(() => { /* badge omission is benign */ });
+    return () => { dead = true; };
+  }, [cid, refreshKey]);
 
   // F.1 backwards-compat: if URL still carries the legacy `cycle_id`
   // param, rewrite it to the canonical `task_id` so the TaskDrawer
@@ -137,13 +151,28 @@ export default function TaskManager() {
                   type="button"
                   onClick={() => setTab(t.key)}
                   data-testid={`task-manager-tab-${t.key}`}
-                  className={`pb-2 text-[12.5px] tracking-wide transition-colors ${
+                  className={`pb-2 text-[12.5px] tracking-wide transition-colors inline-flex items-center gap-2 ${
                     tab === t.key
                       ? "text-[var(--ink)] border-b-2 border-[var(--ink)]"
                       : "text-[var(--muted)] hover:text-[var(--ink)] border-b-2 border-transparent"
                   }`}
                 >
                   {t.label}
+                  {/* Track B Phase B2 (2026-06-04) — live count badge.
+                      Renders only when the count is known and >0 so
+                      empty tabs don't carry visual noise. */}
+                  {typeof counts[t.key] === "number" && counts[t.key] > 0 && (
+                    <span
+                      className={`inline-flex items-center justify-center min-w-[18px] h-[16px] px-1 text-[10px] font-mono rounded-full ${
+                        tab === t.key
+                          ? "bg-[var(--ink)] text-[var(--parchment)]"
+                          : "bg-[var(--cream-deep)] text-[var(--ink)]"
+                      }`}
+                      data-testid={`task-manager-tab-${t.key}-badge`}
+                    >
+                      {counts[t.key]}
+                    </span>
+                  )}
                 </button>
               ))}
               {/* P5.17 — origin filter dropdown (defaults All, sticky in URL). */}

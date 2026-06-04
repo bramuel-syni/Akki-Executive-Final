@@ -39,6 +39,7 @@ def build_analysis_from_uploads(
     context_id: str,
     title: str,
     files: List[Tuple[str, bytes, str]],
+    objective: str = "",
 ) -> Tuple[Analysis, List[Dict[str, Any]]]:
     """Create a draft Analysis from 1+ uploaded files.
 
@@ -46,6 +47,9 @@ def build_analysis_from_uploads(
     `file_format ∈ {"xlsx", "csv"}`. The blobs are returned as a
     SEPARATE list of dicts ready to insert into `analysis_blobs`;
     the Analysis itself only carries the source refs (no bytes).
+
+    `objective`: optional text the user typed at the top of the
+    drawer (Track A Phase 2, 2026-06-04).
 
     Returns: (Analysis instance, list of analysis_blobs documents).
     """
@@ -81,6 +85,7 @@ def build_analysis_from_uploads(
         account_id=account_id,
         context_id=context_id,
         title=title,
+        objective=objective,
         sources=sources,
         refresh_history=[
             AnalysisRefreshEntry(

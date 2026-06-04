@@ -1,0 +1,198 @@
+/**
+ * AnalyzeJournal — Track A Phase 2 (2026-06-04).
+ *
+ * Mirrors DocumentsPage shell: a clean listing of the user's
+ * Analyses with `?aid=<id>` URL contract for drawer-open.
+ *
+ * Opened at `/app/analyze`. The legacy flat surface at
+ * `/app/work-studio/analyze` redirects to this route (App.js).
+ */
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import AppShell from "@/components/layout/AppShell";
+import { Button } from "@/components/ui/button";
+import { api, apiErrorMessage } from "@/lib/api";
+import { toast } from "sonner";
+import AnalyzeDrawer from "@/components/analyze/AnalyzeDrawer";
+import { Loader2, Plus, UploadCloud } from "lucide-react";
+
+function fmtRel(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    const diffH = (Date.now() - d.getTime()) / 36e5;
+    if (diffH < 1) return `${Math.max(1, Math.round(diffH * 60))} min ago`;
+    if (diffH < 24) return `${Math.round(diffH)}h ago`;
+    return d.toLocaleDateString();
+  } catch { return "—"; }
+}
+
+export default function AnalyzeJournal() {
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const aid = params.get("aid");
+
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [objective, setObjective] = useState("");
+  const fileInput = useRef(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/workbook/v2/analyses");
+      setRows(Array.isArray(data) ? data : []);
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Re-load whenever the drawer closes so the listing reflects new
+  // notes / objective edits.
+  useEffect(() => {
+    if (!aid) load();
+  }, [aid, load]);
+
+  const openDrawer = (id) => {
+    const next = new URLSearchParams(params);
+    next.set("aid", id);
+    setParams(next, { replace: false });
+  };
+
+  const closeDrawer = () => {
+    const next = new URLSearchParams(params);
+    next.delete("aid");
+    setParams(next, { replace: false });
+  };
+
+  const onCreate = async (filesList) => {
+    if (!filesList || filesList.length === 0) return;
+    setCreating(true);
+    try {
+      const fd = new FormData();
+      for (const f of filesList) fd.append("files", f);
+      if (objective.trim()) fd.append("objective", objective.trim());
+      const { data } = await api.post("/workbook/upload-multi", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      toast.success(`Analysis created (${filesList.length} file${filesList.length === 1 ? "" : "s"})`);
+      setObjective("");
+      if (fileInput.current) fileInput.current.value = "";
+      await load();
+      openDrawer(data.id);
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <AppShell>
+      <div className="max-w-5xl mx-auto px-6 py-8" data-testid="analyze-journal-page">
+        <header className="mb-8 flex items-baseline justify-between">
+          <div>
+            <h1 className="text-[24px] text-[var(--ink)]">Analyze Journal</h1>
+            <p className="text-[13px] text-[var(--muted)] mt-1">
+              Every analysis you've run, plus the context you captured at the time.
+            </p>
+          </div>
+        </header>
+
+        {/* New analysis — objective + file picker */}
+        <section className="border border-[var(--rule)] rounded-sm p-5 bg-white mb-8" data-testid="analyze-journal-new">
+          <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-2">
+            New analysis
+          </p>
+          <input
+            type="text"
+            value={objective}
+            onChange={(e) => setObjective(e.target.value)}
+            placeholder="What are you trying to learn? (optional)"
+            className="w-full text-[13.5px] bg-[var(--cream-deep)]/30 border border-[var(--rule)] rounded-sm px-3 py-2 mb-3 outline-none focus:border-[var(--ink)]"
+            data-testid="analyze-journal-objective"
+          />
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".xlsx,.csv"
+              multiple
+              onChange={(e) => onCreate(e.target.files)}
+              className="hidden"
+              data-testid="analyze-journal-file-input"
+            />
+            <Button
+              onClick={() => fileInput.current?.click()}
+              disabled={creating}
+              data-testid="analyze-journal-upload-btn"
+            >
+              {creating ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading…</>
+              ) : (
+                <><UploadCloud className="w-4 h-4 mr-2" /> Upload files (.xlsx / .csv)</>
+              )}
+            </Button>
+            <p className="text-[11px] text-[var(--muted)]">
+              Multiple files supported · up to 250 MB each
+            </p>
+          </div>
+        </section>
+
+        {/* Listing */}
+        <section data-testid="analyze-journal-list">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-5 h-5 animate-spin text-[var(--muted)]" />
+            </div>
+          ) : rows.length === 0 ? (
+            <div
+              className="border border-dashed border-[var(--rule)] rounded-sm p-10 text-center bg-white"
+              data-testid="analyze-journal-empty"
+            >
+              <p className="text-[14px] text-[var(--ink)]">No analyses yet.</p>
+              <p className="text-[12.5px] text-[var(--muted)] mt-1">
+                Upload one or more spreadsheets to begin.
+              </p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-[var(--rule)] border-t border-b border-[var(--rule)]">
+              {rows.map((r) => (
+                <li
+                  key={r.id}
+                  className="py-4 cursor-pointer hover:bg-[var(--cream-deep)]/40 px-3 transition-colors"
+                  onClick={() => openDrawer(r.id)}
+                  data-testid={`analyze-journal-row-${r.id}`}
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="text-[14px] text-[var(--ink)] truncate">{r.title}</p>
+                    <span className="text-[10px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] shrink-0">
+                      {r.status}
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-[var(--muted)] mt-0.5">
+                    {r.source_count} source{r.source_count === 1 ? "" : "s"}
+                    {" · "}{r.note_count} note{r.note_count === 1 ? "" : "s"}
+                    {" · "}updated {fmtRel(r.updated_at)}
+                  </p>
+                  {r.objective && (
+                    <p className="text-[12.5px] text-[var(--ink)] mt-1 italic line-clamp-2">
+                      "{r.objective}"
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <AnalyzeDrawer aid={aid} onClose={closeDrawer} />
+    </AppShell>
+  );
+}
