@@ -34,7 +34,7 @@ Verbatim, dated:
 
 **Reconciliation note (2026-06-03):** The previous Section 3 was a prior agent's 8-cluster aggregation. This section is rebuilt verbatim against the three QA docs the user uploaded (`Onboarding Journey QA`, `Task Manager QA`, `Google Login + Doc Reader + Calendar + Open Questions QA`, all dated 2nd June 2026). The audit memo at `sprints/MASTER_STATE_RECONCILIATION_2026-06-03.md` documents the divergences uncovered.
 
-**Total items across 3 QA docs: 37. ✅ 31 · 🟡 0 · ❌ 4 · 🚧 2 · ❔ 0.** (Plus Bug #30 ✅, plus Track A Phase 4 ✅ 2026-06-04, plus Track A Phase 5 ✅ 2026-06-04, plus 1 new bug `BUG-ANL-001` ✅ 2026-06-04 logged & fixed in Section 5b.)
+**Total items across 3 QA docs: 37. ✅ 31 · 🟡 0 · ❌ 4 · 🚧 2 · ❔ 0.** (Plus Bug #30 ✅, plus Track A Phase 4 ✅ 2026-06-04, plus Track A Phase 5 ✅ 2026-06-04, plus 2 new bugs `BUG-ANL-001` ✅ 2026-06-04 + `BUG-ANL-002` ✅ 2026-06-04 logged & fixed in Section 5b.)
 
 Status legend:
 - ✅ SHIPPED — code change verified; tester journey-completion passed
@@ -294,6 +294,15 @@ Status legend:
 
 ### Section 5b — New open bugs (logged, NOT auto-fixed)
 
+- **BUG-ANL-002 — Analyze upload picker silent-failure on file selection** → ✅ COMPLETE 2026-06-04T21:30:00Z (single-dispatch surgical fix, iter 1 of 1).
+  - Symptom: `/app/analyze?context_id=<valid>` → click Upload → pick file → silently nothing happens (no toast, no progress, no error); refresh "fixes" it, retries "sometimes work".
+  - Root cause: `pages/AnalyzeJournal.jsx:135` reset `fileInput.current.value = ""` *inside the success branch* of the `try`. On the failure path the input retained the picked filename. The OS file picker doesn't fire `onChange` when the user picks the same file the input already holds (canonical HTML quirk). User became stuck in a silent-retry loop until refresh.
+  - Diagnosis evidence: `/tmp/bug_anl_002_diagnose.py` confirmed happy-path works; `/tmp/bug_anl_002_confirm_stale_input.py` reproduced the silent retry — pick-after-failure `change_log=[]` and `input.value='C:\\fakepath\\bug_anl_002_sample.csv'` (stuck).
+  - Fix: relocate the `fileInput.current.value = ""` cleanup from the success branch to the `finally` block — always clears after attempt, regardless of outcome. Net +12 LOC / -1 LOC, comment + relocated line.
+  - Verified on live preview via `/tmp/bug_anl_002_upload_journey.py` — 8/8 assertions PASS including the critical `B3_finally_cleared_after_failure` (was the silent-bug state pre-fix) and `C1_retry_same_file_fired_change` (was FAIL pre-fix).
+  - No backend change; no new dependencies; no swallowed exceptions added; no Phase 5/Phase 6 retouch; no other upload surface affected (Documents `UploadModal` clears its input on close — already safe).
+  - Memo: `sprints/BUG_ANL_002_ANALYZE_UPLOAD_SILENT_FAILURE.md`.
+
 - **BUG-ANL-001 — Analyze Journal route fires `context_id_required` toast on direct `/app/analyze` load** → ✅ COMPLETE 2026-06-04T20:05:00Z (user picked option (a) — route guard).
   - Screenshot: https://customer-assets.emergentagent.com/job_feature-docs/artifacts/mc4gtnev_Screenshot_20260604_222916_Chrome.jpg
   - Root cause: `AnalyzeJournal.jsx` mount-time fetches + the multipart upload POST both assumed `context_id` was present in URL or on the account row's `active_context_id`. When neither was set, the upload 400'd with `context_id_required` (`backend/routers/workbook_analysis.py:660-665`) and the user saw the toast.
@@ -314,17 +323,17 @@ Status legend:
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T20:05:00Z (BUG-ANL-001 fixed in one surgical dispatch — `AnalyzeJournal.jsx` mount-time route guard + defensive `context_id` thread on upload; 8 sibling routes audited; live-preview screenshot evidence captured).
-- **Agent:** bug-anl-001-route-guard.
-- **Mode:** Single-file FE fix, no backend change, no new dependencies. Evidence on file: live-preview screenshot at `/tmp/bug_anl_001_case1.png` showing `/app/analyze` URL backfilled to `?context_id=...` with NO `context_id_required` toast; Case 2 listing renders cleanly with 8+ history rows + upload form. Coverage sweep documented in `sprints/BUG_ANL_001_ANALYZE_ROUTE_GUARD.md` — 8 sibling routes audited, none have the same pattern.
-- **Counts after BUG-ANL-001 close:** ✅31 / 🟡0 / ❌4 / 🚧2 across the original 37 QA items (unchanged). Plus Bug #30 ✅ + Track A Phase 4 ✅ + Track A Phase 5 ✅ + BUG-ANL-001 ✅. **0 new open bugs.**
+- **Written:** 2026-06-04T21:30:00Z (BUG-ANL-002 fixed in one surgical dispatch — `AnalyzeJournal.jsx` `finally`-block clear of `input.value` after every upload attempt; 2 diagnostic Playwright scripts + 1 lockdown Playwright script all green on live preview).
+- **Agent:** bug-anl-002-upload-silent-failure.
+- **Mode:** Single-file FE fix, no backend change, no new dependencies. Evidence: `/tmp/bug_anl_002_diagnose.py` (happy-path works) + `/tmp/bug_anl_002_confirm_stale_input.py` (silent-retry root cause: `change_log=[]` on same-file re-pick after failure + `input.value` stuck at picked filename) + `/tmp/bug_anl_002_upload_journey.py` (post-fix 8/8 assertions PASS including the critical `B3_finally_cleared_after_failure` and `C1_retry_same_file_fired_change`). Memo: `sprints/BUG_ANL_002_ANALYZE_UPLOAD_SILENT_FAILURE.md`.
+- **Counts after BUG-ANL-002 close:** ✅31 / 🟡0 / ❌4 / 🚧2 across the original 37 QA items (unchanged). Plus Bug #30 ✅ + Track A Phase 4 ✅ + Track A Phase 5 ✅ + BUG-ANL-001 ✅ + BUG-ANL-002 ✅. **0 new open bugs.**
 
 ---
 
-## Section 8 — Cumulative Health Snapshot (2026-06-04 20:05Z BUG-ANL-001 close)
+## Section 8 — Cumulative Health Snapshot (2026-06-04 21:30Z BUG-ANL-002 close)
 
 - ✅ **11 phases shipped + verified**: Track A Phase 1 + 2 + 3 + 4 + 5, Track B B1 (incl. B1b) + B2 + B3 + B4 + B5.
-- ✅ **1 standalone bug closed**: BUG-ANL-001 Analyze Journal route guard.
+- ✅ **2 standalone bugs closed**: BUG-ANL-001 Analyze Journal route guard + BUG-ANL-002 Analyze upload silent-failure on same-file retry.
 - 🟡 **0 phases pending tester.**
 - ❌ **4 ❌ open items** across the 3 QA docs (unchanged).
 - 🟠 **0 new open bugs.**
@@ -332,6 +341,7 @@ Status legend:
 - ✅ **v1 byte-identical guard intact** (2/2 across all 11 phases).
 - ✅ **Phase 5 lockdown sweep 14/14 PASS** (+ 1 integration-marked deselected).
 - ✅ **Aggregate regression sweep 69/69 PASS** (Phase 5 iter-1 + iter-2 + Phase 4 + Phase 3 + v1 guard + engagement revival).
+- ✅ **BUG-ANL-002 lockdown 8/8 PASS** (`/tmp/bug_anl_002_upload_journey.py` against live preview).
 - ✅ **Phase 6 deferral surfaces verified reachable** in source at `DocumentOverlay.jsx` lines 435 / 767 / 817; PDF hides Revise-with-AI via JSX conditional.
 - ✅ **Voice-lint clean** across customer-copy surfaces.
 - ✅ **ESLint clean** on every file touched.
@@ -339,4 +349,4 @@ Status legend:
 
 ---
 
-**Paused per orchestrator instruction.** NOT auto-starting Phase 6 / any backlog hygiene pass / any sibling-route guard generalisation. The minutes-template polish proposal from the Phase 5 iter-2 finish summary remains **DECLINED as gold-plating**. User decides next dispatch (Phase 6 Pre-Read OR the additional QA detail on picker / xls upload bug OR SendGrid / GCP creds — all separately dispatched when they land).
+**Paused per orchestrator instruction.** NOT auto-starting Phase 6 / any backlog hygiene pass / any sibling-route guard generalisation. The minutes-template polish proposal from the Phase 5 iter-2 finish summary remains **DECLINED as gold-plating**. User decides next dispatch — per the BUG-ANL-002 close-out brief, the Phase 6 Pre-Read (inline DOCX edit / inline PPTX edit / Revise-with-AI diff panel — surfaces stubbed at `DocumentOverlay.jsx` lines 435 / 767 / 817) is the locked next dispatch when the user lands the formal brief. Holding for that signal.

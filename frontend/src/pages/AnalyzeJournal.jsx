@@ -132,13 +132,22 @@ export default function AnalyzeJournal() {
       });
       toast.success(`Analysis created (${filesList.length} file${filesList.length === 1 ? "" : "s"})`);
       setObjective("");
-      if (fileInput.current) fileInput.current.value = "";
       await load();
       openDrawer(data.id);
     } catch (e) {
       toast.error(apiErrorMessage(e));
     } finally {
       setCreating(false);
+      // BUG-ANL-002 (2026-06-04) — ALWAYS clear input.value after an
+      // upload attempt, success OR failure. Pre-fix the clear lived
+      // inside the success branch only, so a failed upload left the
+      // input holding the picked filename. The next OS-picker
+      // selection of the SAME file would not fire `onChange` (the
+      // canonical HTML quirk — input.value unchanged → no event) →
+      // silent failure. Moving the clear to `finally` guarantees
+      // every retry starts from a clean value, so re-picking the
+      // same file always re-triggers the upload.
+      if (fileInput.current) fileInput.current.value = "";
     }
   };
 
