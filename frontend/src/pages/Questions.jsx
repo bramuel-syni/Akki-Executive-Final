@@ -94,6 +94,24 @@ function QuestionDrawer({ row, contextIdGetter, onClose, onAnswered, navigate })
   const [busy, setBusy] = useState(false);
   const [markBusy, setMarkBusy] = useState(false);
 
+  // ── Track B Phase B3 hotfix (2026-06-04) — hoisted above the
+  // `if (!row) return null` early-return at the line below. Adding
+  // these `useState` calls after the early-return broke React's
+  // hook-order contract: initial mount with `row=null` ran 4 hooks
+  // then returned; the row-click re-render then tried to run 13
+  // hooks → "Rendered more hooks than during the previous render."
+  // Closures over the setters resolve identically from the handler
+  // bodies below — no behaviour change.
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareRecipients, setShareRecipients] = useState("");
+  const [shareMessage, setShareMessage] = useState("");
+  const [shareBusy, setShareBusy] = useState(false);
+  const [reopenBusy, setReopenBusy] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkDocs, setLinkDocs] = useState([]);
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
+
   useEffect(() => { setAnswer(""); }, [row?.id]);
 
   if (!row) return null;
@@ -169,10 +187,7 @@ function QuestionDrawer({ row, contextIdGetter, onClose, onAnswered, navigate })
   };
 
   // ── Track B Phase B3 (2026-06-04) — Share / Reopen / Link Response ──
-  const [shareOpen, setShareOpen] = useState(false);
-  const [shareRecipients, setShareRecipients] = useState("");
-  const [shareMessage, setShareMessage] = useState("");
-  const [shareBusy, setShareBusy] = useState(false);
+  // (state declarations hoisted above the early-return — see top of fn.)
   const onShareSubmit = async () => {
     const cid = contextIdGetter ? contextIdGetter(row) : row.context_id;
     if (!cid) { toast.error("Missing context id."); return; }
@@ -198,7 +213,6 @@ function QuestionDrawer({ row, contextIdGetter, onClose, onAnswered, navigate })
     } finally { setShareBusy(false); }
   };
 
-  const [reopenBusy, setReopenBusy] = useState(false);
   const onReopen = async () => {
     const cid = contextIdGetter ? contextIdGetter(row) : row.context_id;
     if (!cid) { toast.error("Missing context id."); return; }
@@ -213,10 +227,6 @@ function QuestionDrawer({ row, contextIdGetter, onClose, onAnswered, navigate })
     } finally { setReopenBusy(false); }
   };
 
-  const [linkOpen, setLinkOpen] = useState(false);
-  const [linkDocs, setLinkDocs] = useState([]);
-  const [linkLoading, setLinkLoading] = useState(false);
-  const [linkBusy, setLinkBusy] = useState(false);
   const openLinkPicker = async () => {
     const cid = contextIdGetter ? contextIdGetter(row) : row.context_id;
     if (!cid) { toast.error("Missing context id."); return; }
