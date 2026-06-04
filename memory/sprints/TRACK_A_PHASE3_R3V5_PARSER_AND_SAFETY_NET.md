@@ -236,3 +236,27 @@ M /tmp/track_a_phase3_r3v2_live_sample.py                 # J19 exact-shape scen
 ## Resume contract
 
 Pause for tester re-run of **J19 + J20 only**. MASTER_STATE.md Section 4 Track A Phase 3 stays 🟡 PARTIAL.
+
+---
+
+## Close-out — TESTER-VERIFIED 2026-06-04 (4/4 PASS)
+
+The tester re-ran all four cases against the real `shield_invoke` endpoint and confirmed R3v5 lands green:
+
+| # | Case | Verdict | Evidence |
+|---|---|---|---|
+| 1 | **J19** (happy path, ISO `YYYY-MM`) | ✅ PASS | HTTP 200 in 8.3s real Claude round-trip. `forecast_meta` non-null with `picker_reason: "non_null_count=16, value_spread=110.00"`. Both `what_changed` + `whats_likely_next` populated with McKinsey-tone prose. `whats_odd` correctly absent (clean workbook). Zero `partial_narration_missing_*` flags. No `\bEMPTY\b` token. **Fix A confirmed working in production.** |
+| 2 | **J20** (noisy unparseable dates) | ✅ PASS | HTTP 200. `partial_narration_missing_whats_likely_next: true` + BC alias `partial_narration_missing_forecast: true` both fire correctly. `what_changed` rendered. No EMPTY leak. **Fix B safety-net confirmed.** |
+| 3 | **J19-API** (curl sanity) | ✅ PASS | Identical behaviour to J19. |
+| 4 | **J20-API** (curl sanity) | ✅ PASS | Identical behaviour to J20. |
+
+**Real LLM round-trip confirmed** — varied stats and non-deterministic prose across runs prove the trace is not mocked. EMPTY-sentinel fix from R3v4 still holding clean across both paths.
+
+**Status flips:**
+- MASTER_STATE.md Section 4 Track A Phase 3 → ✅ COMPLETE.
+- MASTER_STATE.md Section 3 Bug #30 → ✅ SHIPPED (folded into Phase 3 close-out).
+- Lockdown still green: 59/59 PASS.
+- v1 byte-identical guard intact.
+- Voice-lint clean.
+
+**Next:** paused pending user's separate document-review request scoping. Track B B4 + Track A Phase 4 NOT auto-started per orchestrator instruction.

@@ -34,7 +34,7 @@ Verbatim, dated:
 
 **Reconciliation note (2026-06-03):** The previous Section 3 was a prior agent's 8-cluster aggregation. This section is rebuilt verbatim against the three QA docs the user uploaded (`Onboarding Journey QA`, `Task Manager QA`, `Google Login + Doc Reader + Calendar + Open Questions QA`, all dated 2nd June 2026). The audit memo at `sprints/MASTER_STATE_RECONCILIATION_2026-06-03.md` documents the divergences uncovered.
 
-**Total items across 3 QA docs: 37. ✅ 26 · 🟡 0 · ❌ 9 · 🚧 2 · ❔ 0.** (Plus 1 standalone Bug #30 still 🟡 outside the 3 docs.)
+**Total items across 3 QA docs: 37. ✅ 26 · 🟡 0 · ❌ 9 · 🚧 2 · ❔ 0.** (Plus Bug #30 also ✅ now.)
 
 Status legend:
 - ✅ SHIPPED — code change verified; tester journey-completion passed
@@ -107,7 +107,7 @@ Status legend:
 
 | # | Source | Surface | Symptom | Status |
 |---|---|---|---|---|
-| Bug #30 | User-surfaced (not in 3 docs) | Forecaster column-pair picker | `forecast_invalid: workbook_analyzer.forecaster: need at least 3 (date, value) pairs to fit` on a 28,626-row workbook with valid Date + Actual Sales columns | 🟡 SHIPPED tester-pending — Track A Phase 3 2026-06-04T04:48:35Z. `services/workbook_analyzer/forecaster.autopick_forecast_columns` picks the strongest (date, numeric) pair by variance × non-null count; legacy single-column workbooks still work. |
+| Bug #30 | User-surfaced (not in 3 docs) | Forecaster column-pair picker | `forecast_invalid: workbook_analyzer.forecaster: need at least 3 (date, value) pairs to fit` on a 28,626-row workbook with valid Date + Actual Sales columns | ✅ SHIPPED — Track A Phase 3 R3v5 tester-verified 2026-06-04. `services/workbook_analyzer/forecaster.autopick_forecast_columns` picks the strongest (date, numeric) pair by variance × non-null count; legacy single-column workbooks still work. Parser widened to accept `YYYY-MM` / `YYYY/MM` so monthly series reach the picker. |
 
 **Cluster-tag cross-reference (P0 / P1 / P2 priority hints carried forward from the prior 8-cluster matrix; not authoritative — the doc-level grouping above is the canonical structure now):**
 - C1 (Email) → O1, TM3, TM4
@@ -126,7 +126,19 @@ Status legend:
 ### Track A — Analyze Journal redesign
 - Phase 1 (Foundation): Backend Analysis entity + multi-file upload + 250MB + session-close excel deletion + .xlsx/.docx exports → ✅ SHIPPED 2026-06-03 — tester-verified end-to-end (multi-file `ana-*` Analysis → xlsx 7301B / docx 37132B / pptx 37560B; cross-tenant guard intact). Memos: `sprints/TRACK_A_PHASE1_AND_TRACK_B_PHASE1_combined.md`, `sprints/TRACK_A_PHASE1_R3_BLOCKER_FIX.md`.
 - Phase 2 (Chrome): Drawer mirroring Documents pattern + Analyze Journal listing + chat/objective input → ✅ SHIPPED 2026-06-04 — tester PASS Journeys 11-17 (8/8 incl. cross-tenant). Memo: `sprints/TRACK_A_PHASE2_AND_TRACK_B_PHASE2_combined.md`.
-- Phase 3 (Synthesis): Solva v2 narration + Bottom Line + drill-down tabs (What changed / What's likely next / What's odd / Sources / Export). Bug #30 folded here. → 🟡 SHIPPED tester-pending 2026-06-04T05:18:00Z (R3v2 prompt-layer surgical fix). Phase plumbing tester-verified post-R3 fenced-JSON fix; R3v2 dispatch adds (1) temporal-axis prompt context (rows = points in time, NOT entities/locations), (2) explicit FORECAST INPUT block + REQUIREs `whats_likely_next` observation when forecast computed, (3) `forecast_meta: {date_col, value_col, picker_reason}` in synthesize response + `[autopick] selected …` stdout log, (4) McKinsey-tone strengthening + banned-jargon-in-headline lockdown (σ, standard deviation, variance, percentile, z-score), (5) bounded retry max 1 + `partial_narration_missing_forecast` flag when retry also omits. Awaiting tester re-verify on J19 + J20 ONLY. Live wire sample captured 2026-06-04T05:18:21Z: headline "Monthly sales climbed steadily through the period and are on track to reach 17,056 next period—35% above the historical average." Memos: `sprints/TRACK_A_PHASE3_AND_TRACK_B_PHASE3_combined.md`, `sprints/TRACK_A_PHASE3_R3_BLOCKER_FIX.md`, `sprints/TRACK_A_PHASE3_R3V2_PROMPT_SURGICAL_FIX.md`.
+- Phase 3 (Synthesis): Solva v2 narration + Bottom Line + drill-down tabs (What changed / What's likely next / What's odd / Sources / Export). Bug #30 folded here. → ✅ SHIPPED 2026-06-04 — **tester-verified 4/4 PASS on R3v5** (real `shield_invoke` round-trip, varied stats confirm non-mocked). Five surgical iterations landed across R3 → R3v5:
+  • R3 fenced-JSON parser fix
+  • R3v2 temporal-axis prompt + REQUIRE `whats_likely_next` + autopicker meta surfacing + McKinsey-tone + banned-headline-jargon lockdown + bounded retry
+  • R3v3 plumbing — `forecast_meta_for_prompt` reorder + `[run_forecast] swallowed exception` logger.warning + `value_spread` uses minv/maxv + prompt requires ALL non-empty tabs + per-tab partial flags + anomaly call-site fix
+  • R3v4 — replaced `EMPTY` sentinel with humanised "could not fit a linear model" prose; extracted post-Shield completeness validator into `_validate_observation_completeness` helper
+  • R3v5 — parser date classifier widened to accept `%Y-%m` + `%Y/%m` (J19 happy path); validator safety-net branch fires `partial_narration_missing_whats_likely_next` (+ BC alias) when forecast attempt was rejected AND ≥1 obs rendered AND tab absent (tightened — does NOT widen `whats_odd`)
+
+  **Tester evidence (2026-06-04):**
+  - **J19 happy path** — HTTP 200 in 8.3s real Claude round-trip. `forecast_meta = {date_col: Month, value_col: Sales, picker_reason: "non_null_count=16, value_spread=110.00"}` (non-null ← Fix A worked). Both `what_changed` + `whats_likely_next` populated with McKinsey-tone prose ("Sales averaged 193 per month across sixteen periods... no clear linear trend emerging"). `whats_odd` correctly absent (clean workbook). Zero `partial_narration_missing_*` flags. No `\bEMPTY\b` token.
+  - **J20 noisy unparseable dates** — HTTP 200. `partial_narration_missing_whats_likely_next: true` + BC alias `partial_narration_missing_forecast: true` both fire (← Fix B safety-net working). `what_changed` rendered. No EMPTY leak.
+  - **J19-API + J20-API curl sanity** — passed identically. Real LLM round-trip confirmed (varied stats, non-deterministic prose — not mocked).
+  
+  Memos: `sprints/TRACK_A_PHASE3_AND_TRACK_B_PHASE3_combined.md`, `sprints/TRACK_A_PHASE3_R3_BLOCKER_FIX.md`, `sprints/TRACK_A_PHASE3_R3V2_PROMPT_SURGICAL_FIX.md`, `sprints/TRACK_A_PHASE3_R3V3_PLUMBING_AND_ALL_TABS.md`, `sprints/TRACK_A_PHASE3_R3V4_EMPTY_AND_VALIDATOR.md`, `sprints/TRACK_A_PHASE3_R3V5_PARSER_AND_SAFETY_NET.md`.
 - Phase 4 (Multi-workbook + Versioning): Cross-file observation synthesis + refresh-creates-new-version + notes history → ❌ NOT STARTED
 
 ### Track B — QA cleanup
@@ -150,18 +162,16 @@ Status legend:
 
 ## Section 6 — Active Phase
 
-Track A Phase 3 R3v5 (parser-widening + validator safety-net) shipped 2026-06-04T05:58:00Z. Awaiting tester re-verify on J19 + J20 ONLY. Six other phases already tester-PASS (Section 4).
+**None active.** Track A Phase 3 ✅ COMPLETE tester-verified 2026-06-04 (4/4 PASS R3v5). All seven shipped phases (Track A Phase 1+2+3, Track B B1 incl. B1b + B2 + B3) tester-PASS. Paused pending user's separate document-review request scoping — next phase brief to follow.
 
 ---
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T05:58:00Z (Track A Phase 3 R3v5 — Fix A widened the parser date classifier to accept `%Y-%m` + `%Y/%m`; Fix B added a tightly-scoped safety-net branch in `_validate_observation_completeness` that fires `partial_narration_missing_whats_likely_next` (+ BC alias) only when `forecast_attempted=False` AND ≥1 observation rendered AND `whats_likely_next` absent. Safety-net does NOT widen `whats_odd` — empty anomalies block stays a clean-workbook signal, not a missing-tab signal).
-- **Agent:** track-a-phase3-r3v5-parser-and-safety-net.
-- **Mode:** A+B dispatch per tester verdict on R3v4 J19 single-tab regression. Fix A resolves J19 happy path. Fix B is the safety net for the next class of column the classifier rejects.
-- **Combined memo:** `sprints/TRACK_A_PHASE3_R3V5_PARSER_AND_SAFETY_NET.md`
-- **J19 EXACT SHAPE live wire (Month,Sales — 16 YYYY-MM rows):** `[autopick] selected (Month, Sales) from sheet 'Sheet1' (non_null_count=16, value_spread=182.00)`. `forecast_meta` non-null. Both required tabs populate (`what_changed` + `whats_likely_next`); `whats_odd` correctly absent (clean workbook, no anomalies). `partial_flags: {}` — safety-net correctly silent. No `EMPTY` token leak.
-- **Happy-path 24-month live wire (real dates + 3 numerics):** unchanged from R3v4 — all 3 tabs populate, no flags, no EMPTY leak.
-- **Empty-vector live wire (noisy date strings):** validator fires `partial_narration_missing_what_changed: true`; safety-net stays silent because Claude returned `observations: []` (the `len(observations) >= 1` guard correctly suppresses noise).
-- **Lockdown:** `backend/tests/test_track_a_phase3_prompt_fix.py` 10 functions / 14 pytest cases PASS (test 4 extended with Path C — safety-net branch; ≤10 R4 cap honoured via extension not addition). `tests/test_phase_p5_14_workbook_analyze.py` +1 parser unit test (32 total). Combined: **59/59 PASS in 9.41s**. v1 byte-identical guard intact.
-- **Track A Phase 3 stays 🟡** until tester re-runs J19 + J20.
+- **Written:** 2026-06-04T06:05:00Z (Track A Phase 3 flipped 🟡 PARTIAL → ✅ COMPLETE per tester 4/4 verdict on R3v5; Bug #30 also flipped to ✅).
+- **Agent:** track-a-phase3-r3v5-tester-verify-flip.
+- **Mode:** Status flip only. No code change. Tester confirmed (a) Fix A resolves J19 happy path with real Claude round-trip + non-null `forecast_meta`, (b) Fix B safety-net fires on J20 noisy-dates path, (c) EMPTY-sentinel fix from R3v4 still holding clean across both paths, (d) curl sanity J19-API + J20-API identical.
+- **Tester evidence (verbatim quoted in Section 4 Track A Phase 3):** J19 `picker_reason: "non_null_count=16, value_spread=110.00"`; J19 headline "Sales averaged 193 per month across sixteen periods... no clear linear trend emerging"; J20 `partial_narration_missing_whats_likely_next: true` + `partial_narration_missing_forecast: true` both fired.
+- **Combined memo:** `sprints/TRACK_A_PHASE3_R3V5_PARSER_AND_SAFETY_NET.md` (close-out section updated 2026-06-04 with 4/4 PASS verdict).
+- **Lockdown intact:** 59/59 PASS (10 prompt-fix functions × 14 cases + 13 narration + 4 v1 byte-identical + 32 workbook-analyze). v1 byte-identical guard still green. Voice-lint clean.
+- **State:** Paused on user's separate document-review request. Track B B4 + Track A Phase 4 NOT auto-started per instruction.
