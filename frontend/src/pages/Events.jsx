@@ -337,15 +337,6 @@ function EventModal({ open, mode, event, onSave, onDelete, onClose }) {
                 testidPrefix="event-modal-start"
                 ariaLabel="Pick start date and time"
               />
-              {startAt && (
-                <p
-                  className="mt-1 text-[10.5px] font-mono uppercase tracking-[0.14em] text-[var(--ned-purple)]"
-                  data-testid="event-modal-start-selected"
-                  aria-live="polite"
-                >
-                  Selected — commits on Save changes
-                </p>
-              )}
             </div>
             <div>
               <Label htmlFor="evt-end" className="text-[11px] uppercase tracking-[0.08em] font-mono text-[var(--muted)]">
@@ -357,15 +348,6 @@ function EventModal({ open, mode, event, onSave, onDelete, onClose }) {
                 testidPrefix="event-modal-end"
                 ariaLabel="Pick end date and time"
               />
-              {endAt && (
-                <p
-                  className="mt-1 text-[10.5px] font-mono uppercase tracking-[0.14em] text-[var(--ned-purple)]"
-                  data-testid="event-modal-end-selected"
-                  aria-live="polite"
-                >
-                  Selected — commits on Save changes
-                </p>
-              )}
             </div>
           </div>
 
