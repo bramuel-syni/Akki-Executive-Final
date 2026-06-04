@@ -805,6 +805,7 @@ async def synthesize_v2_endpoint(
 
     # Forecast — Bug #30 autopicker.
     pick = autopick_forecast_columns(sheets=sheets)
+    forecast_meta_for_prompt: Optional[Dict[str, Any]] = None
     if pick is not None:
         sheet_obj = next((s for s in sheets if s.name == pick["sheet"]), None)
         if sheet_obj:
@@ -828,6 +829,13 @@ async def synthesize_v2_endpoint(
                 )
                 resolver.resolve_many(fc.citations)
                 wba.forecasts.append(fc)
+                # Track A Phase 3 R3v2 — surface autopicker meta so
+                # the prompt can REQUIRE a `whats_likely_next` obs.
+                forecast_meta_for_prompt = {
+                    "date_col": pick["date_column"],
+                    "value_col": pick["value_column"],
+                    "picker_reason": pick.get("picker_reason", ""),
+                }
             except (ValueError, CitationUnverifiable):
                 pass
 
@@ -853,11 +861,29 @@ async def synthesize_v2_endpoint(
                     continue
                 wba.anomalies.append(a)
 
+    # Track A Phase 3 R3v2 — workbook_context tells the LLM that
+    # the first column is a temporal axis (rows = points in time,
+    # NOT entities). Computed once from the first sheet — every
+    # other sheet follows the same prompt envelope.
+    workbook_context_for_prompt: Optional[Dict[str, Any]] = None
+    if sheets:
+        first_sheet_for_ctx = sheets[0]
+        workbook_context_for_prompt = {
+            "date_columns": [
+                c.name for c in first_sheet_for_ctx.columns if c.kind == "date"
+            ],
+            "numeric_columns": [
+                c.name for c in first_sheet_for_ctx.columns if c.kind == "numeric"
+            ],
+        }
+
     narration = await narrate_analysis(
         workbook_analysis=wba,
         account_id=current["id"],
         objective=row.get("objective", ""),
         cached=row.get("narration"),
+        workbook_context=workbook_context_for_prompt,
+        forecast_meta=forecast_meta_for_prompt,
     )
 
     update_set: Dict[str, Any] = {

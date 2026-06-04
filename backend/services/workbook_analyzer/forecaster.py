@@ -162,8 +162,8 @@ def autopick_forecast_columns(
 ) -> Optional[Dict[str, Any]]:
     """Bug #30 fix (2026-06-04) — column-pair auto-picker.
 
-    Returns `{sheet, date_column, value_column}` for the strongest
-    signal pair OR None if no viable pair exists.
+    Returns `{sheet, date_column, value_column, picker_reason}` for
+    the strongest signal pair OR None if no viable pair exists.
 
     Heuristic: find sheets with at least one `date` column AND one
     or more `numeric` columns. Pick the (date, numeric) pair with
@@ -172,9 +172,12 @@ def autopick_forecast_columns(
     where the strongest forecastable signal usually lives.
 
     Returns None if no sheet has both a date and a numeric column.
-    The synthesize endpoint then skips forecast for this Analysis
-    rather than calling `run_forecast` and tripping the
-    `need at least 3 (date, value) pairs` error.
+
+    Track A Phase 3 R3v2 (2026-06-04) — `picker_reason` surfaces the
+    pair's score so the synthesize endpoint can expose the choice to
+    the user (observability requirement). Also emits a single
+    `[autopick]` stdout line per call so the choice is logged when
+    re-running in headless harnesses.
     """
     best: Optional[Dict[str, Any]] = None
     best_score: Tuple[int, float] = (0, 0.0)
@@ -200,7 +203,21 @@ def autopick_forecast_columns(
                         "sheet": sheet.name,
                         "date_column": date_col.name,
                         "value_column": num_col.name,
+                        "picker_reason": (
+                            f"non_null_count={num_col.non_null_count}, "
+                            f"value_spread={spread:.2f}"
+                        ),
                     }
+    if best is not None:
+        # Observability requirement (Track A Phase 3 R3v2): single
+        # stdout line per call so the chosen pair is visible in the
+        # supervisor backend log.
+        print(
+            f"[autopick] selected ({best['date_column']}, "
+            f"{best['value_column']}) from sheet {best['sheet']!r} "
+            f"({best['picker_reason']})",
+            flush=True,
+        )
     return best
 
 

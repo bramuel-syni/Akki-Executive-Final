@@ -274,6 +274,32 @@ def _voice_lint(text: str) -> bool:
     return not any(b in lowered for b in banned)
 
 
+# Track A Phase 3 R3v2 (2026-06-04) — banned statistical jargon in
+# headlines. The Sources tab keeps the raw stats; the McKinsey-tone
+# headline + observation body must NOT carry them. Symbols/words
+# are matched case-insensitively, anchored with word boundaries
+# where applicable (the bare 'σ' and 'sigma' are symbol-style and
+# always rejected on substring match).
+_BANNED_HEADLINE_JARGON: tuple = (
+    "σ",
+    "sigma",
+    "standard deviation",
+    "std deviation",
+    "std dev",
+    "variance",
+    "percentile",
+    "z-score",
+    "z score",
+)
+
+
+def _headline_has_banned_jargon(text: str) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    return any(b in lowered for b in _BANNED_HEADLINE_JARGON)
+
+
 def _extract_json_payload(raw: str) -> Optional[str]:
     """Track A Phase 3 R3 BLOCKER fix (2026-06-04).
 
@@ -353,13 +379,26 @@ async def narrate_analysis(
     account_id: str,
     objective: str = "",
     cached: Optional[Dict[str, Any]] = None,
+    workbook_context: Optional[Dict[str, Any]] = None,
+    forecast_meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Run the narration pipeline. Returns
-    `{headline, observations[], citations[], cache_key, refused}`.
+    `{headline, observations[], citations[], cache_key, refused,
+      forecast_meta?, partial_narration_missing_forecast?}`.
 
     `cached` is the previously-persisted narration object (or None);
     if its `cache_key` matches the current content hash, returns it
     unchanged.
+
+    Track A Phase 3 R3v2 (2026-06-04) — extended signature:
+      • `workbook_context`: `{date_columns: [..], numeric_columns: [..]}`
+        injected into the prompt so Claude knows rows are points in
+        time, NOT entities.
+      • `forecast_meta`: `{date_col, value_col, picker_reason}` —
+        when present, the prompt REQUIRES a `whats_likely_next`
+        observation. If the LLM omits it, we bounded-retry once and
+        then set `partial_narration_missing_forecast: true` so the
+        FE can surface "forecast not narrated this run".
     """
     blocks = _collect_deterministic(workbook_analysis)
     citeable = [b for b in blocks if b.kind in {"signal", "forecast", "anomaly"}]
@@ -380,18 +419,36 @@ async def narrate_analysis(
             "refusal_reason": "no_deterministic_evidence",
         }
 
-    prompt = _build_prompt(objective=objective, blocks=blocks)
-    try:
-        shield_out = await shield_invoke(
-            purpose="solva.layer_3.synthesis_rendering",
-            content=prompt,
-            tenant_id=account_id,
-            consumer_id="solva",
-            user_id=account_id,
-            model_preference="analytical",
-        )
-    except Exception:  # noqa: BLE001
-        # Shield refusal / LLM unavailable → empty narration, NOT fabricated.
+    prompt = _build_prompt(
+        objective=objective,
+        blocks=blocks,
+        workbook_context=workbook_context,
+        forecast_meta=forecast_meta,
+    )
+
+    async def _invoke_once(prompt_text: str) -> Optional[Dict[str, Any]]:
+        try:
+            shield_out = await shield_invoke(
+                purpose="solva.layer_3.synthesis_rendering",
+                content=prompt_text,
+                tenant_id=account_id,
+                consumer_id="solva",
+                user_id=account_id,
+                model_preference="analytical",
+            )
+        except Exception:  # noqa: BLE001
+            return None
+        raw = shield_out.get("response") or ""
+        payload_str = _extract_json_payload(raw)
+        if payload_str is None:
+            return None
+        try:
+            return json.loads(payload_str)
+        except Exception:  # noqa: BLE001
+            return None
+
+    parsed = await _invoke_once(prompt)
+    if parsed is None:
         return {
             "headline": "",
             "observations": [],
@@ -401,28 +458,33 @@ async def narrate_analysis(
             "refusal_reason": "shield_invoke_failed",
         }
 
-    raw = shield_out.get("response") or ""
-    payload_str = _extract_json_payload(raw)
-    if payload_str is None:
-        return {
-            "headline": "",
-            "observations": [],
-            "citations": [],
-            "cache_key": cache_key,
-            "refused": True,
-            "refusal_reason": "llm_returned_non_json",
-        }
-    try:
-        parsed = json.loads(payload_str)
-    except Exception:  # noqa: BLE001
-        return {
-            "headline": "",
-            "observations": [],
-            "citations": [],
-            "cache_key": cache_key,
-            "refused": True,
-            "refusal_reason": "llm_returned_non_json",
-        }
+    forecast_required = bool(forecast_meta and forecast_meta.get("date_col"))
+
+    # Bounded retry (max 1) — if forecast required but LLM omitted
+    # the `whats_likely_next` observation, prepend a stern reminder
+    # and call once more. After that, surface the partial-flag.
+    if forecast_required:
+        obs_list = parsed.get("observations") or []
+        has_next = any(
+            isinstance(o, dict) and o.get("tab") == "whats_likely_next"
+            for o in obs_list
+        )
+        if not has_next:
+            retry_prompt = (
+                "PREVIOUS ATTEMPT MISSED THE FORECAST REQUIREMENT.\n"
+                "Your prior response did NOT include any observation "
+                "with `tab` = `whats_likely_next`. The forecast input "
+                "is present and MUST be narrated. Retry now and ensure "
+                "at least one observation has `tab` = `whats_likely_next`.\n\n"
+            ) + prompt
+            retry_parsed = await _invoke_once(retry_prompt)
+            if retry_parsed is not None:
+                retry_obs = retry_parsed.get("observations") or []
+                if any(
+                    isinstance(o, dict) and o.get("tab") == "whats_likely_next"
+                    for o in retry_obs
+                ):
+                    parsed = retry_parsed
 
     headline = str(parsed.get("headline") or "").strip()
     observations = parsed.get("observations") or []
@@ -439,10 +501,25 @@ async def narrate_analysis(
     if not _voice_lint(headline):
         headline = ""
 
+    # Banned-jargon-in-headline lockdown (Track A Phase 3 R3v2).
+    # The Sources tab carries σ / standard deviation / variance /
+    # percentile / z-score; the McKinsey-tone headline must NOT.
+    # On hit: blank the headline (NOT the whole narration) — the
+    # FE renders the observations + a "headline rejected" note.
+    if _headline_has_banned_jargon(headline):
+        headline = ""
+
     # Citation resolver — drops out-of-range references.
     observations = _resolve_citations(observations, blocks)
 
-    return {
+    # Did the final accepted narration honour the forecast contract?
+    partial_missing_forecast = False
+    if forecast_required:
+        partial_missing_forecast = not any(
+            o.get("tab") == "whats_likely_next" for o in observations
+        )
+
+    result: Dict[str, Any] = {
         "headline": headline,
         "observations": observations,
         "citations": [
@@ -452,6 +529,16 @@ async def narrate_analysis(
         "cache_key": cache_key,
         "refused": False,
     }
+    if forecast_meta:
+        # Surface the autopicker choice to the FE for observability.
+        result["forecast_meta"] = {
+            "date_col": forecast_meta.get("date_col"),
+            "value_col": forecast_meta.get("value_col"),
+            "picker_reason": forecast_meta.get("picker_reason", ""),
+        }
+    if partial_missing_forecast:
+        result["partial_narration_missing_forecast"] = True
+    return result
 
 
 __all__ = ["narrate_analysis"]
