@@ -27,6 +27,10 @@ from pydantic import BaseModel, Field
 
 from core import db, iso as _iso, now as _now, require_context_membership
 from services.synisense.shield.client import invoke as shield_invoke
+from services.work_studio.confidence_scorer import (
+    score_confidence as _score_confidence,
+    structured_content_hash as _structured_content_hash,
+)
 from services.work_studio_overlay import (
     can_transition,
     create_version_snapshot,
@@ -229,20 +233,116 @@ async def commit_document(
         label="Pre-commit",
         pre_commit=True,
     )
+
+    # Track A Phase 7 (2026-06-05) — confidence recompute on commit
+    # with Tightening-4 idempotency gate. If the structured_content
+    # hash matches the cached `confidence_scored_at_cache_key`, skip
+    # the Shield call entirely (credit-saver — typical clean-commit
+    # path saves ~$0.10). Failure path surfaces
+    # `confidence_recompute_failed: true` on the response per the
+    # Phase 6 brief's failure contract; lifecycle STILL flips.
+    recompute_skipped_unchanged = False
+    recompute_failed = False
+    intel_prev = row.get("intelligence_report") or {}
+    prev_key = intel_prev.get("confidence_scored_at_cache_key")
+    structured_now = row.get("structured_content") or {}
+    new_key = _structured_content_hash(structured_now)
+    confidence_set: Dict[str, Any] = {}
+
+    if prev_key and prev_key == new_key:
+        recompute_skipped_unchanged = True
+    else:
+        # Resolve source docs from the explicit allowlist (Phase 5).
+        source_doc_ids = row.get("source_document_ids") or []
+        if source_doc_ids:
+            blob_rows = await db.documents.find(
+                {
+                    "id": {"$in": source_doc_ids[:20]},
+                    "account_id": ctx["account"]["id"],
+                    "context_id": context_id,
+                },
+                {"_id": 0, "id": 1, "name": 1, "extracted_text": 1, "file_name": 1},
+            ).to_list(length=20)
+            source_blobs = [
+                {
+                    "id":   r.get("id"),
+                    "name": r.get("name") or r.get("file_name") or r.get("id"),
+                    "extracted_text": r.get("extracted_text") or "",
+                }
+                for r in blob_rows
+            ]
+        else:
+            source_blobs = []
+
+        try:
+            score = await _score_confidence(
+                document_title=row.get("title") or "",
+                document_kind=row.get("kind") or "",
+                structured_content=structured_now,
+                source_blobs=source_blobs,
+                tenant_id=ctx["account"]["id"],
+            )
+        except Exception:  # noqa: BLE001 — belt; scorer owns its contract.
+            log.exception("confidence_recompute_unexpected_error",
+                          extra={"artefact_id": artefact_id})
+            score = None
+            recompute_failed = True
+
+        if score is None and source_blobs:
+            # Failure path. Don't clobber prior pct; just flag the row.
+            recompute_failed = True
+            confidence_set["intelligence_report.confidence_score_failed"] = True
+        elif score is None and not source_blobs:
+            # Deliberate skip — no sources to score against. Don't
+            # treat as failure on the response (matches scorer's own
+            # contract).
+            confidence_set["intelligence_report.confidence_score_skipped_no_sources"] = True
+        else:
+            confidence_set.update({
+                "intelligence_report.confidence_pct":                 score["confidence_pct"],
+                "intelligence_report.confidence_rationale":           score["rationale"],
+                "intelligence_report.confidence_scored_at":           score["scored_at"],
+                "intelligence_report.confidence_recomputed_at":      score["scored_at"],
+                "intelligence_report.confidence_breakdown":           score["breakdown"],
+                "intelligence_report.confidence_scored_at_cache_key": score["cache_key"],
+                "intelligence_report.confidence_score_failed":        False,
+                "intelligence_report.confidence_score_skipped_no_sources": False,
+            })
+            if score.get("audit_id"):
+                confidence_set["intelligence_report.confidence_score_audit_id"] = score["audit_id"]
+
+    base_set: Dict[str, Any] = {
+        "lifecycle_state": "committed",
+        "committed_at": _iso(_now()),
+        "committed_by": ctx["account"]["id"],
+        "updated_at": _iso(_now()),
+    }
+    base_set.update(confidence_set)
+
+    # Track A Phase 7 (2026-06-05) — Mongo can't write dotted-path
+    # keys (intelligence_report.confidence_pct etc.) on a null parent.
+    # Promote `intelligence_report` to `{}` if the row was seeded
+    # with None before the main $set.
+    if confidence_set and row.get("intelligence_report") is None:
+        await db.work_studio_exports.update_one(
+            {"id": artefact_id, "context_id": context_id},
+            {"$set": {"intelligence_report": {}}},
+        )
+
     await db.work_studio_exports.update_one(
         {"id": artefact_id, "context_id": context_id},
-        {"$set": {
-            "lifecycle_state": "committed",
-            "committed_at": _iso(_now()),
-            "committed_by": ctx["account"]["id"],
-            "updated_at": _iso(_now()),
-        }},
+        {"$set": base_set},
     )
-    return {
+    response: Dict[str, Any] = {
         "id": artefact_id,
         "lifecycle_state": "committed",
         "pre_commit_snapshot_id": snap["id"],
     }
+    if recompute_skipped_unchanged:
+        response["confidence_recompute_skipped_unchanged"] = True
+    if recompute_failed:
+        response["confidence_recompute_failed"] = True
+    return response
 
 
 # ─────────────────────────────────────────────────────────────────────

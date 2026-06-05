@@ -34,7 +34,7 @@ Verbatim, dated:
 
 **Reconciliation note (2026-06-03):** The previous Section 3 was a prior agent's 8-cluster aggregation. This section is rebuilt verbatim against the three QA docs the user uploaded (`Onboarding Journey QA`, `Task Manager QA`, `Google Login + Doc Reader + Calendar + Open Questions QA`, all dated 2nd June 2026). The audit memo at `sprints/MASTER_STATE_RECONCILIATION_2026-06-03.md` documents the divergences uncovered.
 
-**Total items across 3 QA docs: 37. ✅ 32 · 🟡 0 · ❌ 4 · 🚧 1 · ❔ 0.** (Plus Bug #30 ✅, plus Track A Phase 4 ✅ 2026-06-04, plus Track A Phase 5 ✅ 2026-06-04, plus Track A Phase 6 ✅ 2026-06-04, plus 3 closed bugs `BUG-ANL-001` ✅ + `BUG-ANL-002` ✅ + `BUG-WS-001` ✅ — all 2026-06-04. **0 open bugs. TM3 flipped 🚧→✅ 2026-06-04 — SendGrid Inbound Parse unblocked end-to-end on live preview; G2 remains the only user-blocked item.**)
+**Total items across 3 QA docs: 37. ✅ 32 · 🟡 0 · ❌ 4 · 🚧 1 · ❔ 0.** (Plus Bug #30 ✅, plus Track A Phase 4 ✅ + Phase 5 ✅ + Phase 6 ✅ + **Phase 7 ✅ 2026-06-05**, plus 3 closed bugs `BUG-ANL-001` ✅ + `BUG-ANL-002` ✅ + `BUG-WS-001` ✅. **0 open bugs. 0 deferred phases — confidence scoring runtime path closed via Phase 7.**)
 
 Status legend:
 - ✅ SHIPPED — code change verified; tester journey-completion passed
@@ -307,6 +307,46 @@ Status legend:
 
   **Iteration budget**: 1/3 used. Iter-2/3 reserved for unforeseen architectural surprises only.
 
+- Phase 7 (Confidence Scoring Runtime Compute Path): closes the no-production-scorer gap surfaced by Phase 6 iter-0 archaeology → ✅ SHIPPED 2026-06-05 (iter-1 single-dispatch ship after 4 user-approved tightenings + Pre-Read iter-0 archaeology). **13/13 default Phase 7 lockdowns + 2 integration-marked real-LLM PASS** + **87/87 aggregate BE regression PASS** (5 deselected = 3 integration-marked across phases + Phase 7's 2 integration-marked).
+
+  **Iter-0 archaeology — TWO existing confidence systems mapped before code:**
+  - **System A (per-claim, Solva v2)** — `routers/solva_v2.py:902-916` + `services/solva_v2/probability_weighting.py` (LIVE; untouched by Phase 7).
+  - **System B (Solva v2 artefact aggregate)** — `services/solva_v2/payload_builder.py:1208-1215` `_input_confidence_pct` (LIVE; untouched by Phase 7).
+  - **System C (Work Studio doc-level) — GAP** — `work_studio_exports.intelligence_report.confidence_pct` only written by `seed_chunks.py:64-160` for demos before Phase 7. **Closed by Phase 7's `services/work_studio/confidence_scorer.py`.**
+
+  **4 user-approved tightenings folded:**
+  - **T1 — Consistency = 3 calls** (not 2): real-LLM `test_score_confidence_real_shield_consistency_three_calls` runs 3 sequential Shield calls; asserts max pairwise diff ≤ 10.
+  - **T2 — `documents.confidence_pct` mirror don't-clobber-on-failure**: helper only writes mirror when scorer returns non-None pct. Pinned by `test_failed_score_does_not_clobber_documents_confidence_pct` (pre=82 → scorer raises → post=82).
+  - **T3 — Tooltip suppression path (a)**: FE `IntelligenceCard` renders bare chip when rationale absent; no fake "rationale not available" copy. Data attr `data-confidence-tooltip="present|absent"` pinned by test 13.
+  - **T4 — Skip recompute when structured_content unchanged**: `confidence_scored_at_cache_key` SHA-256 idempotency gate on commit; saves ~$0.10/clean-commit. Response carries `confidence_recompute_skipped_unchanged: true`. Pinned by `test_commit_recompute_skipped_when_structured_content_unchanged`.
+
+  **Iter-1 ship — 6 step deliverables (single coherent dispatch with the 4 tightenings + scope locked at 15/15 tests):**
+
+  • **Step 1 — Scorer service**: new file `backend/services/work_studio/confidence_scorer.py` (~240 LOC). 4-dim rubric (source_coverage / internal_consistency / gap_clarity / recommendation_grounding, weighted 40/25/20/15). Deterministic aggregator (Python banker rounding). Verbatim prompt from Pre-Read §2.2. Failure-mode contract: every except logs via `logger.exception` (Guard Rail 2) and returns None; caller distinguishes skip (no sources) vs fail (timeout/refuse/malformed) via two separate flags.
+
+  • **Step 2 — Compile-time injection**: `_run_export` (~L885 in `routers/work_studio_export.py`) + `_run_enhance` (~L1582) both call `_score_and_mirror_confidence(...)` AFTER `status="complete"` flip — scorer failure does NOT block the user from seeing the artefact. Shared helper (~L944) handles source-doc resolution from citations_manifest + writes to `intelligence_report` + mirrors to `documents.confidence_pct` with T2 don't-clobber contract.
+
+  • **Step 3 — Commit-time recompute**: `routers/work_studio_overlay.py:commit_document` — T4 cache_key gate; on hash match, no Shield call, response carries `confidence_recompute_skipped_unchanged: true`. On hash mismatch + scorer success: writes new pct + `confidence_recomputed_at`. On scorer fail: response carries `confidence_recompute_failed: true`; old pct preserved; lifecycle still flips to "committed" (Phase 6 brief contract).
+
+  • **Step 4 — Overlay payload surfacing**: `services/work_studio_overlay.py:overlay_payload` adds 4 fields (`confidence_rationale`, `confidence_scored_at`, `confidence_recomputed_at`, `confidence_score_failed`). **Listing endpoint UNCHANGED** (Pre-Read §4 — listing slim, rationale on overlay only).
+
+  • **Step 5 — FE chip tooltip (T3 path (a) — suppress entirely)**: `frontend/src/components/work_studio/overlay/DocumentOverlay.jsx:IntelligenceCard` extended. Bare `<span>` chip when rationale absent/empty; chip wrapped in shadcn `Tooltip` only when rationale present. New `data-confidence-tooltip="present|absent"` data attribute.
+
+  • **Step 6 — Cross-phase ripple resolved**: 3 Phase 5/6 commit tests initially failed with Mongo `WriteError: Cannot create field 'X' in element {intelligence_report: null}` — dotted-path `$set` doesn't work against null parent. Surgical fix in 2 places (`_score_and_mirror_confidence` and `commit_document`) pre-promotes `intelligence_report: None` → `{}` before dotted writes. +13 LOC ripple guard.
+
+  **Files touched**:
+  - **Created**: `backend/services/work_studio/__init__.py` (package init), `backend/services/work_studio/confidence_scorer.py` (~240 LOC), `backend/tests/test_track_a_phase7_confidence_scoring.py` (~520 LOC / 15 tests at cap), `memory/sprints/TRACK_A_PHASE_7_CONFIDENCE_SCORING.md`.
+  - **Modified**: `backend/routers/work_studio_export.py` (+~180 LOC), `backend/routers/work_studio_overlay.py` (+~95 LOC), `backend/services/work_studio_overlay.py` (+~10 LOC), `frontend/src/components/work_studio/overlay/DocumentOverlay.jsx` (+~30 LOC).
+  - **Net delta**: ~610 LOC across FE + BE + tests.
+
+  **Cost transparency** (informational): ~$0.10/Shield call × (1 compile + 1 commit) = ~$0.20/doc baseline. T4 skip-when-unchanged collapses the typical "review-then-commit-without-edit" path to **1 call/doc** total. For 10 docs/day/user: ~$1/day/user with T4 vs ~$2/day/user without.
+
+  **No new env vars / no third-party libraries / no shield_invoke signature change / no Track B retouch / no schema migrations beyond additive. ESLint + Ruff clean on every file touched.**
+
+  Memo: `sprints/TRACK_A_PHASE_7_CONFIDENCE_SCORING.md`.
+
+  **Iteration budget**: 1/3 used. Iter-2/3 reserved for unforeseen architectural surprises only.
+
 
 ### Track B — QA cleanup
 - Phase B1 (small mechanical onboarding + signin): **O4** ✅ + **O6** ✅ + **G1** ✅ (Fig 20 — `/sign-in` → `/signin` × 4 buttons) + **G2 Fig 22 modal** ✅ (SessionTimeoutGuard handler gated on `account`); **O7** ✅ Fig 7. Phase status: ✅ SHIPPED — tester PASS Journeys 4-v2, 6, 7, 8, 9 (5/5 incl. regression), 2026-06-04. Memos: `sprints/TRACK_B_PHASE1_FIG7_V2_ROOT_CAUSE_FIX.md`, `sprints/TRACK_B_PHASE1B_O4_O6_FIG20_FIG22.md`.
@@ -337,9 +377,9 @@ Recorded for paper trail per user direction. NOT auto-scoped. Same pattern as Ph
 
 - **`data-testid` presence smoke test on every interactive element** (Phase 6 close-out follow-up, proposed 2026-06-04, **DECLINED** same dispatch). Would grep `<button>` / `<Button>` / form input declarations across `frontend/src/` and assert every one carries a `data-testid` attribute. Would prevent test-id drift class of bug at source. Current state: 12 phases shipped + 2 standalone bugs closed with discipline already applied per surface. No surface has surfaced a missing-testid bug. Same gold-plating pattern as the other DECLINED proposals.
 
-### Future dedicated phase (DEFERRED, awaiting Pre-Read scoping)
+### Future dedicated phase (CLOSED via Phase 7)
 
-- **Confidence scoring runtime compute path** (Phase 6 iter-0 step 0 archaeology, 2026-06-04). Ground-truth read showed `intelligence_report.confidence_pct` is only set by `scripts/seed_chunks.py:64-160` for demo/seed payloads. Real Work Studio docs compiled via Enhance/Compile ship with `confidence_pct: None` — there is NO production runtime scorer to extend. Building one in Phase 6 would have been greenfield LLM prompt work (rubric design + integration test budget) outside the restoration scope. **Deferred to a future dedicated phase** with its own Pre-Read (rubric design, scoring axes, integration test count budget, real-LLM call cost model). NOT auto-scoped; awaiting user dispatch.
+- ✅ ~~**Confidence scoring runtime compute path**~~ — **CLOSED 2026-06-05 via Track A Phase 7.** Phase 6 iter-0 archaeology had correctly identified that no production scorer existed for Work Studio document-level confidence (only `scripts/seed_chunks.py:64-160` wrote `confidence_pct` for demo seeds). Phase 7 shipped a real LLM-driven scorer at `services/work_studio/confidence_scorer.py` with a 4-dimension rubric (source coverage / internal consistency / gap clarity / recommendation grounding, weighted 40/25/20/15), Tightening-4 idempotency gate on commit, Tightening-2 don't-clobber on documents mirror failure, and Tightening-3 FE tooltip suppression when rationale absent. 15/15 default + integration-marked tests PASS on iter-1.
 
 ### Section 5b — New open bugs (logged, NOT auto-fixed)
 
@@ -378,16 +418,44 @@ Recorded for paper trail per user direction. NOT auto-scoped. Same pattern as Ph
 
 ## Section 6 — Active Phase
 
-**None active.** Track A Phase 6 ✅ COMPLETE 2026-06-04 (iter-1 4-step ship after iter-0 step 0 stop-and-surface: confidence recompute deferred + BC test inventory). All 12 shipped phases verified (Track A Phase 1+2+3+4+5+6, Track B B1 incl. B1b + B2 + B3 + B4 + B5). Paused pending user pick of next dispatch.
+**None active.** Track A Phase 7 ✅ COMPLETE 2026-06-05 (iter-1 single-dispatch ship — confidence scoring runtime compute path closed; 4 user-approved tightenings folded; 13/13 default + 2 integration-marked Phase 7 lockdowns PASS; 87/87 aggregate BE regression PASS). All 13 shipped phases verified (Track A Phase 1+2+3+4+5+6+7, Track B B1 incl. B1b + B2 + B3 + B4 + B5). 0 open bugs. 0 deferred phases. 1 user-blocked item (G2 GCP OAuth) only. Paused pending user pick of next dispatch.
 
 ---
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T23:20:00Z (TM3 ✅ unblocked — new SendGrid API key landed in `backend/.env`; outbound sandbox smoke PASS 200/460ms; inbound 3-curl auth surface PASS on live preview; verbatim webhook URL produced for user paste; ground-truth read confirmed full SendGrid infrastructure was already mature — only the API key was stale).
-- **Agent:** tm3-sendgrid-inbound-parse-unblock.
-- **Mode:** Single-env-line change (`SENDGRID_API_KEY` rotated in `backend/.env`); zero production code touched. Verified via `_sendgrid_sandbox_smoke()` at `routers/admin_email_provider.py:82-140` + 3 live-preview curls against `/api/inbound/sendgrid` at `routers/inbound_email.py:1472-1512`. API key NEVER echoed in build report, sprint memo, or code comments (lives only in `.env`).
-- **Counts after TM3 close:** ✅32 / 🟡0 / ❌4 / 🚧1 across the original 37 QA items (TM3 flipped 🚧→✅). Plus Bug #30 ✅ + Track A Phase 4 ✅ + Track A Phase 5 ✅ + Track A Phase 6 ✅ + BUG-ANL-001 ✅ + BUG-ANL-002 ✅ + BUG-WS-001 ✅. **0 open bugs. 1 user-blocked item remaining (G2 GCP OAuth).** 1 deferred future phase (Confidence scoring runtime compute path).
+- **Written:** 2026-06-05T00:30:00Z (Track A Phase 7 ✅ shipped — confidence scoring runtime compute path closed via new `services/work_studio/confidence_scorer.py`; 4 user-approved tightenings folded; cross-phase Mongo `WriteError` ripple resolved with surgical null-parent guards in 2 places; aggregate regression went from 74/74 → 87/87 PASS).
+- **Agent:** track-a-phase-7-confidence-scoring.
+- **Mode:** 1 new BE service file + 2 BE routers extended + 1 BE model file extended + 1 FE component extended + 1 new BE lockdown file (15 tests at cap). +13 LOC ripple guard for null-parent dotted-path Mongo writes. Memo: `sprints/TRACK_A_PHASE_7_CONFIDENCE_SCORING.md`.
+- **Counts after Phase 7 close:** ✅32 / 🟡0 / ❌4 / 🚧1 across the original 37 QA items (unchanged). Plus Bug #30 ✅ + Track A Phase 4 ✅ + Phase 5 ✅ + Phase 6 ✅ + **Phase 7 ✅** + BUG-ANL-001 ✅ + BUG-ANL-002 ✅ + BUG-WS-001 ✅. **0 open bugs. 0 deferred phases. 1 user-blocked item (G2 GCP OAuth) only.**
+
+---
+
+## Section 8 — Cumulative Health Snapshot (2026-06-05 00:30Z Track A Phase 7 ✅ close)
+
+- ✅ **13 phases shipped + verified**: Track A Phase 1 + 2 + 3 + 4 + 5 + 6 + 7, Track B B1 (incl. B1b) + B2 + B3 + B4 + B5.
+- ✅ **3 standalone bugs closed**: BUG-ANL-001 Analyze Journal route guard + BUG-ANL-002 Analyze upload silent-failure + BUG-WS-001 rag_band test spec update.
+- ✅ **TM3 unblocked** 2026-06-04: SendGrid Inbound Parse webhook live-verified end-to-end.
+- 🟡 **0 phases pending tester.**
+- ❌ **4 ❌ open items** across the 3 QA docs (unchanged).
+- 🪲 **0 open bugs.**
+- 🛌 **0 deferred future phases.** (Phase 7 closed the previously deferred confidence-scoring path.)
+- 🚧 **1 USER-BLOCKED item:** Google GCP OAuth creds (G2).
+- ✅ **v1 byte-identical guard intact** (2/2 across all 13 phases).
+- ✅ **Phase 7 lockdown sweep 13/13 default + 2 integration-marked PASS** (`test_track_a_phase7_confidence_scoring.py`).
+- ✅ **Phase 6 lockdown sweep 10/10 default + 2 integration-marked PASS** (`test_track_a_phase6_inline_edit_and_bc_removal.py`).
+- ✅ **Aggregate BE regression sweep 87/87 PASS** (was 74/74 pre-Phase-7; now 87/87 with 5 integration-marked deselected across all phases).
+- ✅ **Phase 5 inverted-stub-flag test PASS** (`test_phase5_phase6_stub_flags_persist`: `n >= 3` → `n == 0`).
+- ✅ **Chunk 8 regression 25/25 PASS** (BUG-WS-001 75/50 spec match).
+- ✅ **BUG-ANL-002 lockdown 8/8 PASS** (`/tmp/bug_anl_002_upload_journey.py` against live preview).
+- ✅ **TM3 SendGrid outbound sandbox smoke PASS** (`_sendgrid_sandbox_smoke` 200/460ms) + **inbound 3-curl auth surface PASS** on live preview.
+- ✅ **Voice-lint clean** across customer-copy surfaces.
+- ✅ **ESLint clean** on every file touched.
+- ✅ **Ruff clean** on all backend files touched in Phase 7.
+
+---
+
+**Paused per orchestrator instruction.** NOT auto-starting any backlog hygiene pass / sibling-route guard generalisation / data-testid presence smoke test (DECLINED 2026-06-04 — same gold-plating pattern as per-source autopick table, minutes-template polish, `useFileInputResetOnInvoke` cross-cutting hook). User decides next dispatch — only open candidate: **GCP OAuth G2 unblock when creds land**. Holding for that signal.
 
 ---
 
@@ -398,7 +466,7 @@ Recorded for paper trail per user direction. NOT auto-scoped. Same pattern as Ph
 - 🟡 **0 phases pending tester.**
 - ❌ **4 ❌ open items** across the 3 QA docs (unchanged).
 - 🪲 **0 open bugs.**
-- 🚧 **1 USER-BLOCKED item remaining:** Google GCP OAuth creds (G2). **TM3 ✅ unblocked 2026-06-04** — SendGrid inbound webhook live-verified end-to-end on preview.
+- 🚧 **1 USER-BLOCKED item remaining:** Google GCP OAuth creds (G2). **TM3 ✅ unblocked 2026-06-04** — SendGrid inbound webhook live-verified end-to-end on preview. **Phase 7 ✅ shipped 2026-06-05** — confidence scoring runtime compute path closed.
 - 🛌 **1 deferred future phase:** Confidence scoring runtime compute path (Phase 6 iter-0 archaeology) — no production scorer exists today; awaiting dedicated Pre-Read.
 - ✅ **v1 byte-identical guard intact** (2/2 across all 12 phases).
 - ✅ **Chunk 8 regression 25/25 PASS** (was 24/25 + 1 fail pre-BUG-WS-001).

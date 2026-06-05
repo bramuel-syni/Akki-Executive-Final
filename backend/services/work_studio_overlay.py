@@ -333,6 +333,18 @@ def overlay_payload(row: Dict[str, Any]) -> Dict[str, Any]:
         # (lifecycle terminus): even when the row flipped to
         # complete on the DB, the FE never saw it.
         "status": row.get("status"),
+        # Track A Phase 7 (2026-06-05) — confidence scoring surfacing.
+        # The chip data (`confidence_pct` + `confidence_band`) already
+        # lives on `intelligence_report` and is consumed by the FE via
+        # that nested dict. Phase 7 adds the rationale + scored_at +
+        # recomputed_at fields to the overlay payload for the chip
+        # tooltip. We pull them up to the top-level overlay shape so
+        # the FE has a flat read path (matches the chip rendering
+        # pattern). Listing endpoint deliberately omits these.
+        "confidence_rationale":   (row.get("intelligence_report") or {}).get("confidence_rationale"),
+        "confidence_scored_at":   (row.get("intelligence_report") or {}).get("confidence_scored_at"),
+        "confidence_recomputed_at": (row.get("intelligence_report") or {}).get("confidence_recomputed_at"),
+        "confidence_score_failed": bool((row.get("intelligence_report") or {}).get("confidence_score_failed")),
     }
 
 

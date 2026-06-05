@@ -44,6 +44,9 @@ from core import (
 )
 from services import two_pass as _tp
 from services import work_studio_export as _ex
+from services.work_studio.confidence_scorer import (
+    score_confidence as _score_confidence,
+)
 
 logger = logging.getLogger("akki.work_studio_export.router")
 
@@ -904,6 +907,35 @@ async def _run_export(
         }},
     )
 
+    # Track A Phase 7 (2026-06-05) — confidence scoring at compile time.
+    # Runs AFTER the status="complete" flip so a scorer failure doesn't
+    # block the artefact from showing up to the user. The scorer
+    # writes onto `intelligence_report` sub-fields independently.
+    # See `services/work_studio/confidence_scorer.py` for the rubric +
+    # failure-mode contract (Pre-Read §6).
+    try:
+        doc_title_for_scoring = (
+            (content_dict.get("title") if isinstance(content_dict, dict) else None)
+            or kind.replace("_", " ").title()
+        )
+        await _score_and_mirror_confidence(
+            export_id=export_id,
+            account_id=account_id,
+            context_id=context_id,
+            document_title=doc_title_for_scoring,
+            document_kind=kind,
+            structured_content=content_dict if isinstance(content_dict, dict) else {},
+            citations_manifest=citations_manifest,
+            source_document_ids=None,  # compile path = citations-derived
+            documents_row_id=cont_doc_id,
+        )
+    except Exception:  # noqa: BLE001
+        # The scorer itself owns its failure-mode contract. This
+        # outer except is a belt — if something blows up between
+        # the scorer call and our db.update, log it explicitly so
+        # we never silently fail (Guard Rail 2).
+        logger.exception("confidence_score_pipeline_unexpected_error", extra={"export_id": export_id})
+
     # Phase R.3 (2026-05-27) — emit work_studio.export.completed feature event.
     try:
         from services.cohort.feature_events import (
@@ -942,7 +974,133 @@ async def _run_export(
 
 
 # =============================================================================
-# C.3 — Continue-in-chat helper
+# Track A Phase 7 — Confidence scoring helpers (shared by _run_export +
+# _run_enhance + commit recompute path in work_studio_overlay.py)
+# =============================================================================
+
+
+async def _resolve_source_blobs_for_scoring(
+    *, account_id: str, context_id: str,
+    citations_manifest: List[Dict[str, Any]],
+    source_document_ids: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Resolve source documents to {id, name, extracted_text} blobs
+    for the scorer. Prefers explicit source_document_ids (Phase 5
+    allowlist), falls back to the citations_manifest's doc_ids
+    (Phase 1-4 compile flow). Caps at 20 docs."""
+    doc_ids: List[str] = []
+    if source_document_ids:
+        doc_ids = list(source_document_ids)
+    else:
+        doc_ids = [c["doc_id"] for c in (citations_manifest or []) if c.get("doc_id")]
+    if not doc_ids:
+        return []
+    doc_ids = doc_ids[:20]
+    rows = await db.documents.find(
+        {"id": {"$in": doc_ids}, "account_id": account_id, "context_id": context_id},
+        {"_id": 0, "id": 1, "name": 1, "extracted_text": 1, "file_name": 1},
+    ).to_list(length=20)
+    blobs: List[Dict[str, Any]] = []
+    for r in rows:
+        blobs.append({
+            "id":   r.get("id"),
+            "name": r.get("name") or r.get("file_name") or r.get("id"),
+            "extracted_text": (r.get("extracted_text") or ""),
+        })
+    return blobs
+
+
+async def _score_and_mirror_confidence(
+    *,
+    export_id: str,
+    account_id: str,
+    context_id: str,
+    document_title: str,
+    document_kind: str,
+    structured_content: Dict[str, Any],
+    citations_manifest: List[Dict[str, Any]],
+    source_document_ids: Optional[List[str]] = None,
+    documents_row_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Score + write to `work_studio_exports.intelligence_report` +
+    mirror to `documents.confidence_pct` (Tightening 2 — don't clobber
+    pre-existing non-null score on failure).
+
+    Returns a small audit dict the caller may log:
+      {"scored": bool, "skipped": bool, "failed": bool, "pct": int | None}
+    """
+    blobs = await _resolve_source_blobs_for_scoring(
+        account_id=account_id, context_id=context_id,
+        citations_manifest=citations_manifest,
+        source_document_ids=source_document_ids,
+    )
+
+    score = await _score_confidence(
+        document_title=document_title,
+        document_kind=document_kind,
+        structured_content=structured_content,
+        source_blobs=blobs,
+        tenant_id=account_id,
+    )
+
+    # Build the $set delta for intelligence_report.
+    intel_set: Dict[str, Any] = {}
+    audit = {"scored": False, "skipped": False, "failed": False, "pct": None}
+
+    if score is None and not blobs:
+        # Deliberate skip (no sources). Surface a different flag than
+        # the failure path so ops can tell them apart.
+        intel_set["intelligence_report.confidence_score_skipped_no_sources"] = True
+        intel_set["intelligence_report.confidence_score_failed"] = False
+        audit["skipped"] = True
+    elif score is None:
+        # Scorer failure (timeout, malformed, refusal).
+        intel_set["intelligence_report.confidence_score_failed"] = True
+        intel_set["intelligence_report.confidence_score_skipped_no_sources"] = False
+        audit["failed"] = True
+    else:
+        intel_set.update({
+            "intelligence_report.confidence_pct":                   score["confidence_pct"],
+            "intelligence_report.confidence_rationale":             score["rationale"],
+            "intelligence_report.confidence_scored_at":             score["scored_at"],
+            "intelligence_report.confidence_breakdown":             score["breakdown"],
+            "intelligence_report.confidence_scored_at_cache_key":   score["cache_key"],
+            "intelligence_report.confidence_score_failed":          False,
+            "intelligence_report.confidence_score_skipped_no_sources": False,
+        })
+        if score.get("audit_id"):
+            intel_set["intelligence_report.confidence_score_audit_id"] = score["audit_id"]
+        audit["scored"] = True
+        audit["pct"] = score["confidence_pct"]
+
+    if intel_set:
+        # Track A Phase 7 (2026-06-05) — Mongo can't write dotted-path
+        # keys on a null parent. Promote `intelligence_report` to {}
+        # first when the row was seeded with None (legacy / fresh
+        # compile-pending shape). Two $set calls is acceptable here
+        # because this helper runs AFTER the user has already seen
+        # `status=complete` — not on the critical render path.
+        existing_row = await db.work_studio_exports.find_one(
+            {"id": export_id}, {"_id": 0, "intelligence_report": 1},
+        )
+        if existing_row and existing_row.get("intelligence_report") is None:
+            await db.work_studio_exports.update_one(
+                {"id": export_id}, {"$set": {"intelligence_report": {}}},
+            )
+        await db.work_studio_exports.update_one({"id": export_id}, {"$set": intel_set})
+
+    # Tightening 2 — mirror to documents row, but do NOT clobber a
+    # previously-good score on this re-export when the new score is
+    # missing.
+    if documents_row_id and score is not None:
+        new_pct = score["confidence_pct"]
+        if isinstance(new_pct, int):
+            await db.documents.update_one(
+                {"id": documents_row_id},
+                {"$set": {"confidence_pct": new_pct}},
+            )
+
+    return audit
 # After a successful export OR enhance, mint a chat tethered to the
 # artefact: insert a row in db.chats (so existing chat router serves
 # it as-is) and a row in db.documents (so the chat composer can show
@@ -1450,6 +1608,28 @@ async def _run_enhance(
         )
     except Exception:
         pass
+
+    # Track A Phase 7 (2026-06-05) — confidence scoring at enhance time.
+    # Same shape as _run_export L885-onwards. See
+    # `services/work_studio/confidence_scorer.py`.
+    try:
+        doc_title_for_scoring = (
+            (content_dict.get("title") if isinstance(content_dict, dict) else None)
+            or kind.replace("_", " ").title()
+        )
+        await _score_and_mirror_confidence(
+            export_id=export_id,
+            account_id=account_id,
+            context_id=context_id,
+            document_title=doc_title_for_scoring,
+            document_kind=kind,
+            structured_content=content_dict if isinstance(content_dict, dict) else {},
+            citations_manifest=citations_manifest,
+            source_document_ids=None,  # enhance path uses citations
+            documents_row_id=cont_doc_id,
+        )
+    except Exception:  # noqa: BLE001 — outer belt; scorer owns its own contract.
+        logger.exception("confidence_score_enhance_unexpected_error", extra={"export_id": export_id})
 
 
 # =============================================================================

@@ -29,6 +29,12 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 
@@ -258,6 +264,9 @@ export default function DocumentOverlay({ contextId, artefactId, open, onClose }
             <IntelligenceCard
               report={doc.intelligence_report}
               confidenceBand={doc.confidence_band}
+              confidenceRationale={doc.confidence_rationale}
+              confidenceScoredAt={doc.confidence_scored_at}
+              confidenceRecomputedAt={doc.confidence_recomputed_at}
               onOpenFullReport={() => setIntelOpen(true)}
             />
             {/* Layer 3 — Document Surface (-033) */}
@@ -503,10 +512,32 @@ function Toolbar({
 // ─────────────────────────────────────────────────────────────────────
 // Intelligence card (-031) — collapsed strip with RAG accent border
 // ─────────────────────────────────────────────────────────────────────
-function IntelligenceCard({ report, confidenceBand, onOpenFullReport }) {
+function IntelligenceCard({
+  report,
+  confidenceBand,
+  confidenceRationale,
+  confidenceScoredAt,
+  confidenceRecomputedAt,
+  onOpenFullReport,
+}) {
   const hasReport = report && typeof report === "object";
   const conf = hasReport ? report.confidence_pct : null;
   const band = confidenceBand || ragBand(conf);
+  // Track A Phase 7 (2026-06-05) — tooltip render contract
+  // (Tightening 3 path (a) — SUPPRESS ENTIRELY when rationale is
+  // missing). Legacy rows + failed-scorer rows show the chip
+  // without a tooltip; no fake "rationale not available" copy.
+  const hasRationale = typeof confidenceRationale === "string" && confidenceRationale.trim().length > 0;
+  const scoredStamp = confidenceRecomputedAt || confidenceScoredAt;
+  const chipEl = (
+    <span
+      className={`text-[12px] font-mono ${RAG_TEXT[band]} ${hasRationale ? "cursor-help" : ""}`}
+      data-testid="document-overlay-intelligence-confidence"
+      data-confidence-tooltip={hasRationale ? "present" : "absent"}
+    >
+      {conf !== null && conf !== undefined ? `${conf}%` : "—"}
+    </span>
+  );
   return (
     <div
       className={`mx-5 my-3 px-4 py-3 rounded-md bg-white border-l-[3px] ${RAG_BORDER[band]} border-y border-r border-y-[var(--rule)] border-r-[var(--rule)] flex items-center gap-3`}
@@ -535,12 +566,25 @@ function IntelligenceCard({ report, confidenceBand, onOpenFullReport }) {
           </span>
         )}
       </div>
-      <span
-        className={`text-[12px] font-mono ${RAG_TEXT[band]}`}
-        data-testid="document-overlay-intelligence-confidence"
-      >
-        {conf !== null && conf !== undefined ? `${conf}%` : "—"}
-      </span>
+      {hasRationale ? (
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>{chipEl}</TooltipTrigger>
+            <TooltipContent
+              side="bottom"
+              className="max-w-[320px] bg-[var(--ink)] text-[var(--cream)] text-[11px] leading-[1.45] px-3 py-2"
+              data-testid="document-overlay-confidence-rationale-tooltip"
+            >
+              <div>{confidenceRationale}</div>
+              {scoredStamp && (
+                <div className="mt-1 text-[10px] opacity-70" data-testid="document-overlay-confidence-scored-at">
+                  Scored {new Date(scoredStamp).toLocaleString()}
+                </div>
+              )}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : chipEl}
       <button
         type="button"
         onClick={onOpenFullReport}
