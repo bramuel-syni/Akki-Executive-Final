@@ -122,13 +122,24 @@ async def _seed_artefact(db_conn, *, context_id, account_id, lifecycle_state="dr
 # Foundation — migration + helpers
 # ─────────────────────────────────────────────────────────────────────
 def test_chunk8_rag_band_thresholds():
-    """Q4 decision: ≥80 green · 50-79 amber · <50 red · None unrated."""
+    """Phase 5 (2026-06-04) thresholds — ≥75 green · 50-74 amber ·
+    <50 red · None unrated. Supersedes the Q4 (2026-05-18) 80/50
+    thresholds; canonical per the QA-doc verbatim spec ("above 75%
+    neutral, 50-75% amber, below 50% red") as cited in the
+    production source comment at
+    `services/work_studio_overlay.py:34-51`.
+
+    BUG-WS-001 (2026-06-04) — test thresholds were missed in the
+    Phase 5 sweep; updated to match production. User-confirmed
+    "production is right" on triage.
+    """
     assert rag_band(None) == "unrated"
     assert rag_band(0) == "red"
     assert rag_band(49) == "red"
     assert rag_band(50) == "amber"
-    assert rag_band(79) == "amber"
-    assert rag_band(80) == "green"
+    assert rag_band(74) == "amber"
+    assert rag_band(75) == "green"
+    assert rag_band(79) == "green"
     assert rag_band(100) == "green"
 
 
@@ -288,7 +299,12 @@ async def test_qa_030_create_new_version_clones_to_draft(client, authed, db_conn
 # ─────────────────────────────────────────────────────────────────────
 @pytest.mark.parametrize("pct,expected", [(91, "green"), (62, "amber"), (33, "red"), (None, "unrated")])
 async def test_qa_031_intelligence_card_rag_band(client, authed, db_conn, pct, expected):
-    """Q4 thresholds reach the overlay payload via `confidence_band`."""
+    """Phase 5 75/50 thresholds reach the overlay payload via
+    `confidence_band` (canonical spec per
+    `services/work_studio_overlay.py:34-51`).
+    Parametrized values are spec-stable across both 80-spec and
+    75-spec — 91 ≥ both → green; 62 ∈ [50, 80) → amber; 33 < 50 → red;
+    None → unrated."""
     headers = await _login(client, authed["email"], authed["password"])
     intel = None if pct is None else {"confidence_pct": pct, "sources_count": 2}
     aid = await _seed_artefact(

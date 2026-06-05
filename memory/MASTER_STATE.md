@@ -34,7 +34,7 @@ Verbatim, dated:
 
 **Reconciliation note (2026-06-03):** The previous Section 3 was a prior agent's 8-cluster aggregation. This section is rebuilt verbatim against the three QA docs the user uploaded (`Onboarding Journey QA`, `Task Manager QA`, `Google Login + Doc Reader + Calendar + Open Questions QA`, all dated 2nd June 2026). The audit memo at `sprints/MASTER_STATE_RECONCILIATION_2026-06-03.md` documents the divergences uncovered.
 
-**Total items across 3 QA docs: 37. ✅ 31 · 🟡 0 · ❌ 4 · 🚧 2 · ❔ 0.** (Plus Bug #30 ✅, plus Track A Phase 4 ✅ 2026-06-04, plus Track A Phase 5 ✅ 2026-06-04, plus Track A Phase 6 ✅ 2026-06-04, plus 2 closed bugs `BUG-ANL-001` ✅ + `BUG-ANL-002` ✅, plus 1 new tracked open bug `BUG-WS-001` 🪲 2026-06-04 logged in Section 5b — all 2026-06-04.)
+**Total items across 3 QA docs: 37. ✅ 31 · 🟡 0 · ❌ 4 · 🚧 2 · ❔ 0.** (Plus Bug #30 ✅, plus Track A Phase 4 ✅ 2026-06-04, plus Track A Phase 5 ✅ 2026-06-04, plus Track A Phase 6 ✅ 2026-06-04, plus 3 closed bugs `BUG-ANL-001` ✅ + `BUG-ANL-002` ✅ + `BUG-WS-001` ✅ — all 2026-06-04. **0 open bugs.**)
 
 Status legend:
 - ✅ SHIPPED — code change verified; tester journey-completion passed
@@ -339,15 +339,17 @@ Recorded for paper trail per user direction. NOT auto-scoped. Same pattern as Ph
 
 ### Section 5b — New open bugs (logged, NOT auto-fixed)
 
-- **BUG-WS-001 — `rag_band` 75/80 threshold mismatch between production code and chunk8 pinned test** → 🪲 OPEN 2026-06-04T22:30:00Z (surfaced by Phase 6 aggregate sweep; reproduced on clean checkout via `git stash`; **NOT** introduced by Phase 6 — pre-existing).
-  - Symptom: `test_qa_chunk_8.py::test_chunk8_rag_band_thresholds` fails with `assert rag_band(79) == "amber"` but actual is `"green"`. Translates to a user-visible miscolour: confidence chips at the 75-79 boundary render against whichever spec is canonical.
-  - Two-sided conflict:
-    - **Production code** (`backend/services/work_studio_overlay.py:34-51`) implements **75/50 thresholds** with an explicit Phase 5 provenance comment: `"≥75 green · 50-74 amber · <50 red · None → unrated"` and inline rationale `"Track A Phase 5 (2026-06-04): the previous 80/50 thresholds (Q4 decision 2026-05-18) are superseded by the QA doc verbatim spec (\"above 75% neutral, 50-75% amber, below 50% red\")"`. Per QA spec, 79 is **above 75 → green** (production is correct).
-    - **Pinned test** (`backend/tests/test_qa_chunk_8.py:124-132`) still pins the **80/50 thresholds** from the Q4 decision: docstring `"Q4 decision: ≥80 green · 50-79 amber · <50 red · None unrated."` and assertions `rag_band(79) == "amber"` + `rag_band(80) == "green"`. The chunk8 test was never updated when Phase 5 superseded the thresholds.
-  - User-facing impact: depends on which spec wins. If the production 75-spec is canonical (per Phase 5 QA-doc citation), then the test is stale and needs updating to the new thresholds. If the user reverts intent to 80-spec, production code at L47-50 needs `>= 80` instead of `>= 75` (and the comment block at L35/L41-43 needs unwinding).
-  - Reproduced unrelated to Phase 6: `git stash` of all Phase 6 changes still produces the same `AssertionError: assert 'green' == 'amber'` on a clean checkout — confirming pre-existing regression.
-  - Status: OPEN — NOT auto-fixed. Awaits user triage on which spec is canonical (75/50 from Phase 5 QA-doc verbatim, OR 80/50 from Q4 decision). Once decided, fix is either: (a) update test to match production (75/50), OR (b) revert production to 80/50 (and reconcile the Phase 5 comment trail).
-  - No memo file. Logged inline here; will be moved to a dedicated sprint memo when dispatched.
+- **BUG-WS-001 — `rag_band` 75/80 threshold mismatch between production code and chunk8 pinned test** → ✅ COMPLETE 2026-06-04T22:55:00Z (test-only fix per user triage; iter 1 of 1).
+  - User decision (verbatim from triage dispatch): **"production is right. 75/50 thresholds are canonical (per the Phase 5 QA doc). The 80-spec comment in `tests/test_qa_chunk_8.py:124-132` is stale — it was missed in the Phase 5 sweep that flipped production."**
+  - Symptom: `test_qa_chunk_8.py::test_chunk8_rag_band_thresholds` was failing — pinned `rag_band(79) == "amber"` (80-spec) but production at `services/work_studio_overlay.py:34-51` returns `"green"` per the Phase 5 75-spec (`if pct >= 75: return "green"`).
+  - Iter-0 stop-and-surface caught a typo in the user's triage dispatch (proposed `rag_band(79) → "amber"`, `rag_band(75) → "amber"`, `rag_band(74) → "amber"`). The user confirmed slip (option (a)); proceeded with the canonical 75-spec values per R5 ground-truth-first.
+  - Fix landed at `backend/tests/test_qa_chunk_8.py:124-143` (+14 LOC / -3 LOC):
+    - Docstring replaced — "Q4 decision: ≥80 green · 50-79 amber · <50 red · None unrated." → Phase 5 thresholds + BUG-WS-001 provenance + cross-reference to `services/work_studio_overlay.py:34-51`.
+    - Assertions updated to match production: `rag_band(74) == "amber"`, `rag_band(75) == "green"` (boundary inclusive), `rag_band(79) == "green"`. `(0, 49, 50, 100)` boundary asserts unchanged.
+    - Secondary stale comment also corrected at `test_qa_chunk_8.py:291` (parametrize docstring "Q4 thresholds reach..." → Phase 5 thresholds + spec-stable note since `(91, 62, 33, None)` values are stable across both 80-spec and 75-spec). Audit-trail consistency tightening per user dispatch hard-no #2.
+  - No production code touched. Zero LOC in `services/`, `routers/`, `frontend/`.
+  - Verified: chunk8 regression **25/25 PASS** (was 24 passed + 1 failed pre-fix). Aggregate sweep **74/74 PASS** (was 73/73 + 1 deselected pre-existing fail; now 74/74 + 0 fails).
+  - No memo file — minor surgical test-only fix; logged inline here.
 
 - **BUG-ANL-002 — Analyze upload picker silent-failure on file selection** → ✅ COMPLETE 2026-06-04T21:30:00Z (single-dispatch surgical fix, iter 1 of 1).
   - Symptom: `/app/analyze?context_id=<valid>` → click Upload → pick file → silently nothing happens (no toast, no progress, no error); refresh "fixes" it, retries "sometimes work".
@@ -378,32 +380,33 @@ Recorded for paper trail per user direction. NOT auto-scoped. Same pattern as Ph
 
 ## Section 7 — Last Updated
 
-- **Written:** 2026-06-04T22:45:00Z (Track A Phase 6 ✅ flipped after self-evidence acceptance; BUG-WS-001 logged in Section 5b with two-sided 75-vs-80 spec conflict + file:line citations; Confidence scoring runtime path logged in Section 5 deferred backlog with iter-0 archaeology trail; data-testid presence smoke test proposal DECLINED as gold-plating + parked in Section 5 hygiene note).
-- **Agent:** track-a-phase-6-inline-edit-revise-bc-removal + post-ship close-out.
-- **Mode:** No code change in this dispatch — pure MASTER_STATE flip + close-out logging. Phase 6 sprint memo `sprints/TRACK_A_PHASE_6_INLINE_EDIT_REVISE_AND_BC_REMOVAL.md` extended with "What we deferred and why" subsection capturing iter-0 Finding A archaeology so next agent doesn't reopen the question.
-- **Counts after Phase 6 + BUG-WS-001 logging:** ✅31 / 🟡0 / ❌4 / 🚧2 across the original 37 QA items (unchanged). Plus Bug #30 ✅ + Track A Phase 4 ✅ + Track A Phase 5 ✅ + **Track A Phase 6 ✅** + BUG-ANL-001 ✅ + BUG-ANL-002 ✅ + **BUG-WS-001 🪲 OPEN** (NOT a Phase 6 regression — pre-existing, surfaced by aggregate sweep). 1 deferred future phase (Confidence scoring runtime compute path).
+- **Written:** 2026-06-04T22:55:00Z (BUG-WS-001 ✅ closed — test-only fix at `tests/test_qa_chunk_8.py:124-143` to match canonical Phase 5 75/50 thresholds; production unchanged; iter-0 stop-and-surface caught a typo in user triage dispatch (R5 ground-truth-first win); chunk8 regression went from 24/25 → 25/25; aggregate sweep went from 73/73 with 1 deselected pre-existing fail → 74/74 + 0 fails).
+- **Agent:** bug-ws-001-rag-band-test-spec-update.
+- **Mode:** Test-only update — 1 file touched (`backend/tests/test_qa_chunk_8.py`), 2 docstrings + 3 assertion changes (boundary-inclusive 75 → green, 79 → green, new 74 → amber). Production code at `services/work_studio_overlay.py:34-51` untouched. No memo file (minor surgical fix; logged inline in Section 5b).
+- **Counts after BUG-WS-001 close:** ✅31 / 🟡0 / ❌4 / 🚧2 across the original 37 QA items (unchanged). Plus Bug #30 ✅ + Track A Phase 4 ✅ + Track A Phase 5 ✅ + Track A Phase 6 ✅ + BUG-ANL-001 ✅ + BUG-ANL-002 ✅ + **BUG-WS-001 ✅**. **0 open bugs.** 1 deferred future phase (Confidence scoring runtime compute path) + 2 user-blocked items unchanged.
 
 ---
 
-## Section 8 — Cumulative Health Snapshot (2026-06-04 22:45Z Track A Phase 6 ✅ flip + BUG-WS-001 log)
+## Section 8 — Cumulative Health Snapshot (2026-06-04 22:55Z BUG-WS-001 ✅ close)
 
 - ✅ **12 phases shipped + verified**: Track A Phase 1 + 2 + 3 + 4 + 5 + 6, Track B B1 (incl. B1b) + B2 + B3 + B4 + B5.
-- ✅ **2 standalone bugs closed**: BUG-ANL-001 Analyze Journal route guard + BUG-ANL-002 Analyze upload silent-failure on same-file retry.
+- ✅ **3 standalone bugs closed**: BUG-ANL-001 Analyze Journal route guard + BUG-ANL-002 Analyze upload silent-failure on same-file retry + BUG-WS-001 rag_band test spec update.
 - 🟡 **0 phases pending tester.**
 - ❌ **4 ❌ open items** across the 3 QA docs (unchanged).
-- 🪲 **1 new tracked open bug**: BUG-WS-001 (`rag_band` 75/80 threshold mismatch between production code at `services/work_studio_overlay.py:34-51` and pinned test at `tests/test_qa_chunk_8.py:124-132`; reproduced on clean checkout via `git stash` — NOT Phase 6 regression). Awaits user triage on canonical spec (75/50 Phase 5 vs 80/50 Q4).
+- 🪲 **0 open bugs.**
 - 🚧 **2 USER-BLOCKED items unchanged:** SendGrid Inbound Parse webhook config (TM3), Google GCP OAuth creds (G2).
 - 🛌 **1 deferred future phase:** Confidence scoring runtime compute path (Phase 6 iter-0 archaeology) — no production scorer exists today; awaiting dedicated Pre-Read.
 - ✅ **v1 byte-identical guard intact** (2/2 across all 12 phases).
+- ✅ **Chunk 8 regression 25/25 PASS** (was 24/25 + 1 fail pre-BUG-WS-001).
+- ✅ **Aggregate BE regression sweep 74/74 PASS** (Phase 6 + Phase 5 + Phase 4 + Phase 3 + v1 guard + Chunk 8 all green; was 73/73 + 1 deselected pre-existing fail pre-BUG-WS-001 close).
 - ✅ **Phase 6 lockdown sweep 10/10 default + 2 integration-marked PASS** (`test_track_a_phase6_inline_edit_and_bc_removal.py`).
 - ✅ **Phase 6 Playwright lockdown 15/15 assertions PASS** (`/tmp/phase6_inline_edit_journey.py` 6/6 + `/tmp/phase6_save_on_close.py` 3/3 + `/tmp/phase6_revise_with_ai_journey.py` 6/6).
-- ✅ **Aggregate BE regression sweep 73/73 PASS** (Phase 6 + Phase 5 + Phase 4 + Phase 3 + v1 guard + Chunk 8 except BUG-WS-001 deselected).
 - ✅ **Phase 5 inverted-stub-flag test PASS** (`test_phase5_phase6_stub_flags_persist`: `n >= 3` → `n == 0`).
 - ✅ **BUG-ANL-002 lockdown 8/8 PASS** (`/tmp/bug_anl_002_upload_journey.py` against live preview).
 - ✅ **Voice-lint clean** across customer-copy surfaces.
 - ✅ **ESLint clean** on every file touched.
-- ✅ **Ruff clean** on all backend files touched during Phase 6.
+- ✅ **Ruff clean** on all backend files touched.
 
 ---
 
-**Paused per orchestrator instruction.** NOT auto-starting any backlog hygiene pass / BUG-WS-001 triage / confidence scoring runtime path / sibling-route guard generalisation / data-testid presence smoke test (DECLINED 2026-06-04 — same gold-plating pattern as per-source autopick table, minutes-template polish, `useFileInputResetOnInvoke` cross-cutting hook). User decides next dispatch — open candidates: (a) **BUG-WS-001 triage** (decide canonical 75/50 vs 80/50 spec), (b) **Confidence scoring runtime path Pre-Read**, (c) **SendGrid TM3 / GCP G2 unblock when creds land**. Holding for that signal.
+**Paused per orchestrator instruction.** NOT auto-starting any backlog hygiene pass / confidence scoring runtime path / sibling-route guard generalisation / data-testid presence smoke test (DECLINED 2026-06-04 — same gold-plating pattern as per-source autopick table, minutes-template polish, `useFileInputResetOnInvoke` cross-cutting hook). User decides next dispatch — open candidates: (a) **Confidence scoring runtime path Pre-Read**, (b) **SendGrid TM3 / GCP G2 unblock when creds land**. Holding for that signal.
