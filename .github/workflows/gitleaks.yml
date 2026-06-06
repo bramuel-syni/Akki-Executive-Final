@@ -43,7 +43,7 @@ jobs:
           fetch-depth: ${{ github.event_name == 'schedule' && 0 || 2 }}
 
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE:  ${{ secrets.GITLEAKS_LICENSE }}   # optional — empty in OSS mode
