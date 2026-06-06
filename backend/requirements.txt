@@ -104,7 +104,7 @@ presidio_analyzer==2.2.362
 presidio_anonymizer==2.2.362
 propcache==0.4.1
 proto-plus==1.27.2
-protobuf==5.29.6
+protobuf==7.35.0
 pyasn1==0.6.3
 pyasn1_modules==0.4.2
 pycodestyle==2.14.0
