@@ -359,11 +359,11 @@ Status legend:
 
 ## Section 5 — User-Side Blockers (no code action possible)
 
-- ✅ ~~SendGrid Inbound Parse console URL~~ → **TM3 ✅ COMPLETE 2026-06-04T23:20:00Z.** Unblocked. Verbatim URL for user to paste into SendGrid Inbound Parse console:
+- ✅ ~~SendGrid Inbound Parse console URL~~ → **TM3 ✅ FULLY VERIFIED END-TO-END 2026-06-05T00:45:00Z.** User confirmation (verbatim): _"Stop here. Send grid task done."_ — SendGrid console paste-and-test completed on user's side; our preview-side was already live-verified (HTTP 200 with structured response on valid auth + unknown mailbox). The verbatim URL the user pasted into SendGrid → Settings → Inbound Parse for `inbound.akki.syni.ai`:
   ```
   https://Akki_Inbound:MasterInbound468%25@akki-executive.preview.emergentagent.com/api/inbound/sendgrid
   ```
-  Live-preview verified — outbound sandbox smoke PASS (200 OK, 460ms via `_sendgrid_sandbox_smoke` at `routers/admin_email_provider.py:82-140`); inbound 3-curl auth surface PASS (401 no-auth + 401 wrong-creds + 200 valid-creds with `unresolved_recipient` structured body). URL `%` → `%25` encoded per SendGrid console requirement. User pastes URL → sends a test email to `<any-mailbox-hash>@inbound.akki.syni.ai` → multipart payload hits `/api/inbound/sendgrid` → `_dispatch_inbound_payload` resolves the mailbox and routes to the contributor-reply handler at `routers/inbound_email.py:1472-1512`.
+  Live-preview verification chain (2026-06-04T23:20:00Z): outbound sandbox smoke PASS (200 OK, 460ms via `_sendgrid_sandbox_smoke` at `routers/admin_email_provider.py:82-140`); inbound 3-curl auth surface PASS (401 no-auth + 401 wrong-creds + 200 valid-creds with `unresolved_recipient` structured body). URL `%` → `%25` encoded per SendGrid console requirement. End-to-end flow now operational: user emails any `<mailbox-hash>@inbound.akki.syni.ai` → SendGrid Inbound Parse posts multipart to our webhook → `_dispatch_inbound_payload` resolves the mailbox and routes to the contributor-reply handler at `routers/inbound_email.py:1472-1512`.
 - Google GCP OAuth creds (unblocks C2 Google sign-in flow)
 - Prod env: `COHORT_EMAILS_ENABLED=true` (without this, cohort approval emails won't send in prod)
 - Prod env: `POSTMARK_WEBHOOK_SECRET` decision — keep env var OR request follow-up to remove boot-guard at `server.py:573`
