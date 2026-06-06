@@ -37,7 +37,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # Diff scans need 2 commits; scheduled scans need full depth.
           fetch-depth: ${{ github.event_name == 'schedule' && 0 || 2 }}
