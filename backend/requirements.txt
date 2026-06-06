@@ -188,5 +188,5 @@ Werkzeug==3.1.8
 wrapt==2.1.2
 xlsxwriter==3.2.9
 yarl==1.23.0
-zipp==3.23.0
+zipp==4.1.0
 zopfli==0.4.1
